@@ -20,7 +20,9 @@
 set -e
 
 # --- Global variables for command paths ---
-VENV_DIR="./assignment2_venv" # Create venv in the current directory
+# Get the directory where the script is located, and use an absolute path
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+VENV_DIR="$SCRIPT_DIR/networking_venv" # Create venv in the current directory
 PYTHON_CMD=""
 REDIS_SERVER_CMD=""
 REDIS_CLI_CMD=""
@@ -29,43 +31,90 @@ NGINX_CMD=""
 # --- Function to install missing prerequisites ---
 install_prerequisites() {
     echo "--- Installing missing prerequisites ---"
+    local packages_to_install=()
 
-    # Check if apt-get is available (for Debian/Ubuntu systems)
-    if command -v apt-get >/dev/null; then
-        echo "Updating apt package list..."
-        sudo apt-get update
-
-        echo "Installing system packages: nginx, redis-tools, python3-pip, python3-venv, postgresql-client..."
-        sudo apt-get install -y nginx redis-tools python3-pip python3-venv postgresql-client
-    else
+    # Define all required packages
+    local required_packages=("nginx" "redis-server" "python3-pip" "python3-venv" "postgresql-client" "postgresql")
+    
+    # Check if apt-get is available
+    if ! command -v apt-get >/dev/null; then
         echo "WARNING: apt-get not found. Cannot automatically install system packages." >&2
-        echo "Please install nginx, redis-tools, python3-pip, python3-venv, postgresql-client manually." >&2
+        echo "Please install the following packages manually: ${required_packages[*]}" >&2
         return 1 # Indicate failure
     fi
 
-    # Find the python3 executable to create the virtual environment
+    # Check which packages are missing
+    for pkg in "${required_packages[@]}"; do
+        if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
+            packages_to_install+=("$pkg")
+        fi
+    done
+
+    # Install missing packages if any
+    if [ ${#packages_to_install[@]} -gt 0 ]; then
+        echo "Updating apt package list..."
+        sudo apt-get update
+        echo "Installing system packages: ${packages_to_install[*]}..."
+        sudo apt-get install -y "${packages_to_install[@]}"
+    fi
+
+    # --- Auto-configure PostgreSQL ---
+    # Find the main postgresql.conf file.
+    PG_CONF=$(sudo find /etc/postgresql -name "postgresql.conf" | head -n 1)
+    if [ -n "$PG_CONF" ]; then
+        echo "Configuring PostgreSQL to accept network connections..."
+        # Allow connections from all network interfaces
+        sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" "$PG_CONF"
+        sudo sed -i "s/listen_addresses = 'localhost'/listen_addresses = '*'/" "$PG_CONF"
+
+        # Find the pg_hba.conf file in the same directory
+        PG_HBA_CONF="${PG_CONF%/*}/pg_hba.conf"
+        
+        # Add a rule to trust connections from our private network, if the rule doesn't already exist.
+        if ! sudo grep -q "host    all             all             10.0.0.0/24             trust" "$PG_HBA_CONF"; then
+            echo "Adding access rule to pg_hba.conf for 10.0.0.0/24 network..."
+            echo "host    all             all             10.0.0.0/24             trust" | sudo tee -a "$PG_HBA_CONF" > /dev/null
+        fi
+        
+        echo "Restarting PostgreSQL service to apply changes..."
+        sudo systemctl restart postgresql
+        sleep 2 # Give the service a moment to come back up
+
+        # Create the 'orders' database if it doesn't exist.
+        if ! sudo -u postgres psql -lqt | cut -d \| -f 1 | grep -qw orders; then
+            echo "Creating 'orders' database..."
+            sudo -u postgres createdb orders
+        fi
+    else
+        echo "WARNING: postgresql.conf not found. Could not auto-configure PostgreSQL."
+    fi
+
+    # --- Configure Python Virtual Environment ---
     local system_python
     system_python=$(which python3 || true)
     if [ -z "$system_python" ]; then
-        echo "ERROR: python3 command not found after installation attempt. Cannot create virtual environment." >&2
+        echo "ERROR: python3 command not found. Cannot create virtual environment." >&2
         return 1
     fi
     
-    echo "Creating Python virtual environment at $VENV_DIR..."
-    "$system_python" -m venv "$VENV_DIR"
+    # Only create venv if it doesn't exist
+    if [ ! -d "$VENV_DIR" ]; then
+        echo "Creating Python virtual environment at $VENV_DIR..."
+        "$system_python" -m venv "$VENV_DIR"
+    fi
 
     # Install Python packages using the venv's pip
     VENV_PYTHON="$VENV_DIR/bin/python"
     if [ -x "$VENV_PYTHON" ]; then
-        echo "Installing Python packages: Flask, requests, psycopg2-binary, redis..."
-        "$VENV_PYTHON" -m pip install Flask requests psycopg2-binary redis
+        echo "Installing/updating Python packages: Flask, requests, psycopg2-binary, redis..."
+        "$VENV_PYTHON" -m pip install -U Flask requests psycopg2-binary redis
     else
         echo "ERROR: Virtual environment Python executable not found at $VENV_PYTHON." >&2
-        return 1 # Indicate failure
+        return 1
     fi
 
-    echo "✅ Prerequisites installation attempted."
-    return 0 # Indicate success
+    echo "✅ Prerequisites installation and configuration attempted."
+    return 0
 }
 
 
@@ -254,7 +303,7 @@ import psycopg2
 import os
 import sys
 app = Flask(__name__)
-DB_HOST = os.getenv("DB_HOST", "10.0.0.60")
+DB_HOST = os.getenv("DB_HOST", "10.0.0.1")
 DB_NAME = os.getenv("DB_NAME", "orders")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
@@ -360,6 +409,7 @@ start_services() {
 
 # --- Function to stop all services ---
 stop_services() {
+    discover_commands # Make sure we can find commands before trying to stop them
     echo "--- Stopping all services ---"
 
     echo "[1/5] Stopping Nginx..."
@@ -386,22 +436,24 @@ stop_services() {
 
 # --- Function to check the status of services ---
 status_services() {
+    discover_commands # Make sure we can find commands before checking their status
     echo "--- Checking service status ---"
     echo ""
     echo "=> Nginx Processes:"
-    sudo ip netns exec nginx-lb pgrep -af "$NGINX_CMD" || echo "  Not running."
+    # Use a pattern that won't match the pgrep command itself
+    sudo ip netns exec nginx-lb pgrep -af "nginx: master process" || echo "  Not running."
     echo ""
     echo "=> Python App Processes (api-gateway.py):"
-    sudo ip netns exec api-gateway pgrep -af "api-gateway.py" || echo "  Not running."
+    sudo ip netns exec api-gateway pgrep -af "[a]pi-gateway.py" || echo "  Not running."
     echo ""
     echo "=> Python App Processes (product-service.py):"
-    sudo ip netns exec product-service pgrep -af "product-service.py" || echo "  Not running."
+    sudo ip netns exec product-service pgrep -af "[p]roduct-service.py" || echo "  Not running."
     echo ""
     echo "=> Python App Processes (order-service.py):"
-    sudo ip netns exec order-service pgrep -af "order-service.py" || echo "  Not running."
+    sudo ip netns exec order-service pgrep -af "[o]rder-service.py" || echo "  Not running."
     echo ""
     echo "=> Redis Process:"
-    sudo ip netns exec redis-cache pgrep -af "$REDIS_SERVER_CMD" || echo "  Not running."
+    sudo ip netns exec redis-cache pgrep -af "[r]edis-server" || echo "  Not running."
     echo ""
 }
 
