@@ -1,0 +1,1 @@
+sudo ip netns exec api-gateway bash -c "echo 'nameserver 8.8.8.8' > /etc/resolv.conf && ping -c 3 google.com"
