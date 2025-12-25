@@ -46,7 +46,8 @@ install_prereqs() {
 
     if [ ${#missing_pkgs[@]} -gt 0 ]; then
         echo "--- Installing missing prerequisites for '$tool': ${missing_pkgs[*]} ---"
-        if command -v apt-get >/dev/null; then
+        if command -v apt-get >/dev/null;
+ then
             sudo apt-get update
             sudo apt-get install -y "${missing_pkgs[@]}"
         else
@@ -57,7 +58,8 @@ install_prereqs() {
 
     # Specific check for python 'requests' library for the health tool
     if [ "$tool" == "health" ]; then
-        if ! python3 -c "import requests" 2>/dev/null; then
+        if ! python3 -c "import requests" 2>/dev/null;
+ then
             echo "--- Installing 'requests' Python package ---"
             python3 -m pip install --user requests
         fi
@@ -198,7 +200,7 @@ def get_namespace_ips():
                 ['sudo', 'ip', 'netns', 'exec', ns, 'ip', 'addr'],
                 capture_output=True, text=True, check=True
             ).stdout
-            match = re.search(r'inet (\d+\.\d+\.\d+\.\d+)', result)
+            match = re.search(r'inet (\d+\.\d+\.\d+\.\d+)/.* scope global', result)
             if match:
                 ips[ns] = match.group(1)
         except (subprocess.CalledProcessError, FileNotFoundError):

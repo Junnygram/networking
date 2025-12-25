@@ -64,8 +64,8 @@ install_prerequisites() {
     if [ -n "$PG_CONF" ]; then
         echo "Configuring PostgreSQL to accept network connections..."
         # Allow connections from all network interfaces
-        sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" "$PG_CONF"
-        sudo sed -i "s/listen_addresses = 'localhost'/listen_addresses = '*'/" "$PG_CONF"
+        sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/
+        sudo sed -i "s/listen_addresses = 'localhost'/listen_addresses = '*'/
 
         # Find the pg_hba.conf file in the same directory
         PG_HBA_CONF="${PG_CONF%/*}/pg_hba.conf"
@@ -81,7 +81,7 @@ install_prerequisites() {
         sleep 2 # Give the service a moment to come back up
 
         # Create the 'orders' database if it doesn't exist.
-        if ! sudo -u postgres psql -lqt | cut -d \| -f 1 | grep -qw orders; then
+        if ! sudo -u postgres psql -lqt | cut -d '|' -f 1 | grep -qw orders; then
             echo "Creating 'orders' database..."
             sudo -u postgres createdb orders
         fi
@@ -388,13 +388,13 @@ start_services() {
     sleep 1
 
     echo "[2/5] Starting API Gateway in 'api-gateway' namespace..."
-    sudo ip netns exec api-gateway "$PYTHON_CMD" api-gateway.py &
+    sudo ip netns exec api-gateway "$PYTHON_CMD" api-gateway.py > /dev/null 2>&1 &
     
     echo "[3/5] Starting Product Service in 'product-service' namespace..."
-    sudo ip netns exec product-service "$PYTHON_CMD" product-service.py &
+    sudo ip netns exec product-service "$PYTHON_CMD" product-service.py > /dev/null 2>&1 &
 
     echo "[4/5] Starting Order Service in 'order-service' namespace..."
-    sudo ip netns exec order-service "$PYTHON_CMD" order-service.py &
+    sudo ip netns exec order-service "$PYTHON_CMD" order-service.py > /dev/null 2>&1 &
     sleep 1
 
     echo "[5/5] Starting Nginx in 'nginx-lb' namespace..."
