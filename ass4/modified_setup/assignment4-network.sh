@@ -101,9 +101,13 @@ setup() {
         echo "--- Configuring namespace: $ns ---"
         sudo ip netns add "$ns"
 
-        # Create veth pair
-        veth_ns="veth-${ns:0:11}" # Keep name short
+        # Create a unique, short name for the veth pair.
+        # Substitutions are applied, then the result is truncated to 7 chars to be safe.
+        short_name=$(echo "$ns" | sed 's/product-service/ps/' | sed 's/postgres/pg/' | sed 's/gateway/gw/' | sed 's/nginx/ngx/' | sed 's/-//g')
+        short_name=${short_name:0:7}
+        veth_ns="veth-${short_name}"
         veth_br="${veth_ns}-br"
+        
         sudo ip link add "$veth_ns" type veth peer name "$veth_br"
 
         # Attach to bridge and move to namespace
