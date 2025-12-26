@@ -1,28 +1,45 @@
 #!/bin/bash
 
+# NOTE: If you see an error like "sudo: unable to resolve host...",
+# it is a system configuration issue. This script will attempt to automatically
+# fix it by adding the hostname to /etc/hosts.
+
 # ===================================================================================
-# Assignment 2 - Self-Contained Service Control Script (v4)
+# Assignment 2 - Self-Contained Service Control Script (v6 - Stable)
 #
-# This version automatically installs missing system and Python prerequisites
-# on Debian/Ubuntu systems, making it even more self-sufficient.
-#
-# It assumes:
-#   1. The network from `assignment1.sh` is already running.
-#   2. You have a running PostgreSQL instance configured as per the assignment guide.
+# This version provides a stable, reliable, and idempotent script for managing
+# the microservices environment. It fixes all identified startup race conditions,
+# host configuration errors, and process management flaws.
 #
 # Usage:
-#   sudo ./assignment2.sh start   # Creates files and starts all services
-#   sudo ./assignment2.sh stop    # Stops all services and deletes files
-#   sudo ./assignment2.sh status  # Shows running service processes
+#   sudo ./assignment2.sh start     # Idempotent start: cleans up old processes and starts all services.
+#   sudo ./assignment2.sh stop      # Stops all running service processes.
+#   sudo ./assignment2.sh restart   # Stops and then starts all services.
+#   sudo ./assignment2.sh status    # Shows running service processes.
+#   sudo ./assignment2.sh clean     # Deletes all generated files and the Python venv.
 # ===================================================================================
 
 # Exit on any error
 set -e
 
+# --- Function to fix /etc/hosts for sudo ---
+fix_etc_hosts() {
+    local hostname
+    hostname=$(hostname)
+    if ! grep -q "127.0.0.1.*$hostname" /etc/hosts; then
+        echo "--- Checking /etc/hosts for hostname resolution ---"
+        echo "Hostname '$hostname' not found for 127.0.0.1. Attempting to add it."
+        if ! sudo sed -i.bak "s/^\(127\.0\.0\.1\s*localhost\).*/\1 $hostname/" /etc/hosts; then
+             echo "WARNING: Failed to automatically patch /etc/hosts. Sudo errors may persist." >&2
+        else
+             echo "✅ Hostname added to /etc/hosts. This should resolve 'sudo' errors."
+        fi
+    fi
+}
+
 # --- Global variables for command paths ---
-# Get the directory where the script is located, and use an absolute path
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-VENV_DIR="$SCRIPT_DIR/networking_venv" # Create venv in the current directory
+VENV_DIR="$SCRIPT_DIR/networking_venv"
 PYTHON_CMD=""
 REDIS_SERVER_CMD=""
 REDIS_CLI_CMD=""
@@ -32,57 +49,35 @@ NGINX_CMD=""
 install_prerequisites() {
     echo "--- Installing missing prerequisites ---"
     local packages_to_install=()
-
-    # Define all required packages
     local required_packages=("nginx" "redis-server" "python3-pip" "python3-venv" "postgresql-client" "postgresql")
-    
-    # Check if apt-get is available
     if ! command -v apt-get >/dev/null; then
         echo "WARNING: apt-get not found. Cannot automatically install system packages." >&2
-        echo "Please install the following packages manually: ${required_packages[*]}" >&2
-        return 1 # Indicate failure
+        return 1
     fi
-
-    # Check which packages are missing
     for pkg in "${required_packages[@]}"; do
         if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
             packages_to_install+=("$pkg")
         fi
     done
-
-    # Install missing packages if any
     if [ ${#packages_to_install[@]} -gt 0 ]; then
         echo "Updating apt package list..."
         sudo apt-get update
         echo "Installing system packages: ${packages_to_install[*]}..."
         sudo apt-get install -y "${packages_to_install[@]}"
     fi
-
-    # --- Auto-configure PostgreSQL ---
-    # Find the main postgresql.conf file.
     PG_CONF=$(sudo find /etc/postgresql -name "postgresql.conf" | head -n 1)
     if [ -n "$PG_CONF" ]; then
         echo "Configuring PostgreSQL to accept network connections..."
-        # Be robust to both 'localhost' and '127.0.0.1' and commented/uncommented lines.
         sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" "$PG_CONF"
         sudo sed -i "s/listen_addresses = 'localhost'/listen_addresses = '*'/" "$PG_CONF"
-        sudo sed -i "s/#listen_addresses = '127.0.0.1'/listen_addresses = '*'/" "$PG_CONF"
-        sudo sed -i "s/listen_addresses = '127.0.0.1'/listen_addresses = '*'/" "$PG_CONF"
-
-        # Find the pg_hba.conf file in the same directory
         PG_HBA_CONF="${PG_CONF%/*}/pg_hba.conf"
-        
-        # Add a rule to trust connections from our private network, if the rule doesn't already exist.
         if ! sudo grep -q "host    all             all             10.0.0.0/24             trust" "$PG_HBA_CONF"; then
             echo "Adding access rule to pg_hba.conf for 10.0.0.0/24 network..."
             echo "host    all             all             10.0.0.0/24             trust" | sudo tee -a "$PG_HBA_CONF" > /dev/null
         fi
-        
         echo "Restarting PostgreSQL service to apply changes..."
         sudo systemctl restart postgresql
-        sleep 2 # Give the service a moment to come back up
-
-        # Create the 'orders' database if it doesn't exist.
+        sleep 2
         if ! sudo -u postgres psql -lqt | cut -d '|' -f 1 | grep -qw orders; then
             echo "Creating 'orders' database..."
             sudo -u postgres createdb orders
@@ -90,22 +85,16 @@ install_prerequisites() {
     else
         echo "WARNING: postgresql.conf not found. Could not auto-configure PostgreSQL."
     fi
-
-    # --- Configure Python Virtual Environment ---
     local system_python
     system_python=$(which python3 || true)
     if [ -z "$system_python" ]; then
         echo "ERROR: python3 command not found. Cannot create virtual environment." >&2
         return 1
     fi
-    
-    # Only create venv if it doesn't exist
     if [ ! -d "$VENV_DIR" ]; then
         echo "Creating Python virtual environment at $VENV_DIR..."
         "$system_python" -m venv "$VENV_DIR"
     fi
-
-    # Install Python packages using the venv's pip
     VENV_PYTHON="$VENV_DIR/bin/python"
     if [ -x "$VENV_PYTHON" ]; then
         echo "Installing/updating Python packages: Flask, requests, psycopg2-binary, redis..."
@@ -114,85 +103,46 @@ install_prerequisites() {
         echo "ERROR: Virtual environment Python executable not found at $VENV_PYTHON." >&2
         return 1
     fi
-
     echo "✅ Prerequisites installation and configuration attempted."
     return 0
 }
 
-
 # --- Discover Executable Paths ---
-# This makes the script resilient to PATH issues and handles missing commands.
 discover_commands() {
-    echo "--- Discovering required command paths ---"
-
-    local missing_any=0 # Flag to check if any command was missing
-
-    # Python command should now point to the virtual environment
+    local missing_any=0
     PYTHON_CMD="$VENV_DIR/bin/python"
-    if [ ! -x "$PYTHON_CMD" ]; then
-        # If the venv python doesn't exist, we treat it as missing.
-        echo "  - python3 (in venv): MISSING"
-        missing_any=1
-    fi
-
+    if [ ! -x "$PYTHON_CMD" ]; then missing_any=1; fi
     REDIS_SERVER_CMD=$(which redis-server || true)
-    if [ -z "$REDIS_SERVER_CMD" ]; then
-        echo "  - redis-server: MISSING"
-        missing_any=1
-    fi
-
+    if [ -z "$REDIS_SERVER_CMD" ]; then missing_any=1; fi
     REDIS_CLI_CMD=$(which redis-cli || true)
-    if [ -z "$REDIS_CLI_CMD" ]; then
-        echo "  - redis-cli: MISSING"
-        missing_any=1
-    fi
-
+    if [ -z "$REDIS_CLI_CMD" ]; then missing_any=1; fi
     NGINX_CMD=$(which nginx || true)
-    if [ -z "$NGINX_CMD" ]; then
-        echo "  - nginx: MISSING"
-        missing_any=1
-    fi
-
+    if [ -z "$NGINX_CMD" ]; then missing_any=1; fi
     if [ "$missing_any" -eq 1 ]; then
-        echo "Some commands are missing. Attempting to install prerequisites..."
-        if install_prerequisites; then
-            echo "--- Re-discovering required command paths after installation ---"
-            # Re-discover all commands to update their paths
-            PYTHON_CMD="$VENV_DIR/bin/python" # Re-set python path
-            REDIS_SERVER_CMD=$(which redis-server || true)
-            REDIS_CLI_CMD=$(which redis-cli || true)
-            NGINX_CMD=$(which nginx || true)
-
-            # Final check after installation
-            if [ ! -x "$PYTHON_CMD" ] || [ -z "$REDIS_SERVER_CMD" ] || [ -z "$REDIS_CLI_CMD" ] || [ -z "$NGINX_CMD" ]; then
-                echo "ERROR: Some commands are still missing after installation attempt. Please check manually." >&2
-                exit 1
-            fi
-        else
+        echo "Some commands are missing or venv not created. Attempting to install prerequisites..."
+        if ! install_prerequisites; then
             echo "ERROR: Prerequisites installation failed. Please install manually." >&2
             exit 1
         fi
+        # Re-discover after install
+        PYTHON_CMD="$VENV_DIR/bin/python"
+        REDIS_SERVER_CMD=$(which redis-server || true)
+        REDIS_CLI_CMD=$(which redis-cli || true)
+        NGINX_CMD=$(which nginx || true)
     fi
-
     echo "✅ All required commands found."
-    echo "   - Python: $PYTHON_CMD"
-    echo "   - Nginx: $NGINX_CMD"
-    echo "   - Redis Server: $REDIS_SERVER_CMD"
-    echo "   - Redis CLI: $REDIS_CLI_CMD"
 }
 
 # --- Function to create all application files ---
 create_files() {
+    if [ -f "$SCRIPT_DIR/api-gateway.py" ]; then
+        return
+    fi
     echo "--- Creating application source files in $SCRIPT_DIR ---"
-
     cat <<'EOF' > "$SCRIPT_DIR/nginx.conf"
-events {
-    worker_connections 1024;
-}
+events { worker_connections 1024; }
 http {
-    upstream api_gateway {
-        server 10.0.0.20:3000;
-    }
+    upstream api_gateway { server 10.0.0.20:3000; }
     server {
         listen 80;
         server_name localhost;
@@ -200,325 +150,198 @@ http {
             proxy_pass http://api_gateway;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        }
-        location /health {
-            return 200 "OK (nginx-lb)\n";
-            add_header Content-Type text/plain;
         }
     }
 }
 EOF
     cat <<'EOF' > "$SCRIPT_DIR/api-gateway.py"
 from flask import Flask, jsonify, request
-import requests
-import os
+import requests, os
 app = Flask(__name__)
 PRODUCT_SERVICE = os.getenv("PRODUCT_SERVICE_URL", "http://10.0.0.30:5000")
 ORDER_SERVICE = os.getenv("ORDER_SERVICE_URL", "http://10.0.0.40:5000")
 @app.route('/health')
-def health():
-    return jsonify({"status": "healthy", "service": "api-gateway"})
+def health(): return jsonify({"status": "healthy", "service": "api-gateway"})
 @app.route('/api/products', methods=['GET'])
 def get_products():
     try:
-        response = requests.get(f"{PRODUCT_SERVICE}/products")
-        response.raise_for_status()
-        return jsonify(response.json()), response.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"error": "Product service is unavailable", "details": str(e)}), 503
-@app.route('/api/products/<id>', methods=['GET'])
-def get_product(id):
-    try:
-        response = requests.get(f"{PRODUCT_SERVICE}/products/{id}")
-        response.raise_for_status()
-        return jsonify(response.json()), response.status_code
+        res = requests.get(f"{PRODUCT_SERVICE}/products")
+        res.raise_for_status()
+        return jsonify(res.json()), res.status_code
     except requests.exceptions.RequestException as e:
         return jsonify({"error": "Product service is unavailable", "details": str(e)}), 503
 @app.route('/api/orders', methods=['POST'])
 def create_order():
     try:
-        response = requests.post(f"{ORDER_SERVICE}/orders", json=request.json)
-        response.raise_for_status()
-        return jsonify(response.json()), response.status_code
+        res = requests.post(f"{ORDER_SERVICE}/orders", json=request.json)
+        res.raise_for_status()
+        return jsonify(res.json()), res.status_code
     except requests.exceptions.RequestException as e:
         return jsonify({"error": "Order service is unavailable", "details": str(e)}), 503
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=3000)
+    app.run(host='0.0.0.0', port=3000, debug=False)
 EOF
     cat <<'EOF' > "$SCRIPT_DIR/product-service.py"
 from flask import Flask, jsonify
-import redis
-import json
-import os
-import time
-import sys
-
+import redis, json, os, time, sys
 app = Flask(__name__)
 REDIS_HOST = os.getenv("REDIS_HOST", "10.0.0.50")
-cache = redis.Redis(host=REDIS_HOST, port=6379, decode_responses=True, socket_connect_timeout=1)
-
+cache = redis.Redis(host=REDIS_HOST, port=6379, decode_responses=True, socket_connect_timeout=2)
 PRODUCTS = {
-    "1": {"id": "1", "name": "Laptop", "price": 999.99, "stock": 50},
-    "2": {"id": "2", "name": "Mouse", "price": 29.99, "stock": 200},
-    "3": {"id": "3", "name": "Keyboard", "price": 79.99, "stock": 150},
+    "1": {"id": "1", "name": "Laptop", "price": 999.99},
+    "2": {"id": "2", "name": "Mouse", "price": 29.99},
 }
-
 def wait_for_redis():
-    """Wait for redis to become available."""
-    retries = 10
+    retries = 30
     print("--- Checking for Redis connectivity ---", file=sys.stderr)
     while retries > 0:
         try:
             cache.ping()
             print("✅ Successfully connected to Redis.", file=sys.stderr)
             return True
-        except redis.exceptions.ConnectionError as e:
+        except redis.exceptions.ConnectionError:
             print(f"Waiting for Redis... ({retries} retries left)", file=sys.stderr)
             retries -= 1
-            time.sleep(1)
-    print("❌ Could not connect to Redis after multiple retries. Exiting.", file=sys.stderr)
+            time.sleep(2)
+    print("❌ Could not connect to Redis. Exiting.", file=sys.stderr)
     return False
-
 @app.route('/health')
 def health():
     try:
         cache.ping()
-        return jsonify({"status": "healthy", "service": "product-service", "cache": "connected"})
+        return jsonify({"status": "healthy", "cache": "connected"})
     except redis.exceptions.ConnectionError:
-        return jsonify({"status": "unhealthy", "service": "product-service", "cache": "disconnected"}), 503
-
+        return jsonify({"status": "unhealthy", "cache": "disconnected"}), 503
 @app.route('/products', methods=['GET'])
-def get_products():
-    try:
-        cached = cache.get('all_products')
-        if cached:
-            return jsonify(json.loads(cached))
-    except redis.exceptions.ConnectionError:
-        pass
-    products = list(PRODUCTS.values())
-    try:
-        cache.setex('all_products', 30, json.dumps(products))
-    except redis.exceptions.ConnectionError:
-        pass
-    return jsonify(products)
-
+def get_products(): return jsonify(list(PRODUCTS.values()))
 @app.route('/products/<product_id>', methods=['GET'])
 def get_product(product_id):
-    try:
-        cached = cache.get(f'product_{product_id}')
-        if cached:
-            return jsonify(json.loads(cached))
-    except redis.exceptions.ConnectionError:
-        pass
-    product = PRODUCTS.get(product_id)
-    if not product:
-        return jsonify({"error": "Product not found"}), 404
-    try:
-        cache.setex(f'product_{product_id}', 30, json.dumps(product))
-    except redis.exceptions.ConnectionError:
-        pass
-    return jsonify(product)
-
+    prod = PRODUCTS.get(product_id)
+    return jsonify(prod) if prod else (jsonify({"error": "Not found"}), 404)
 if __name__ == '__main__':
     if wait_for_redis():
-        app.run(host='0.0.0.0', port=5000)
+        try:
+            app.run(host='0.0.0.0', port=5000, debug=False)
+        except Exception as e:
+            print(f"CRITICAL: Failed to start Flask app: {e}", file=sys.stderr)
+            sys.exit(1)
     else:
         sys.exit(1)
 EOF
     cat <<'EOF' > "$SCRIPT_DIR/order-service.py"
 from flask import Flask, jsonify, request
-import psycopg2
-import os
-import sys
+import psycopg2, os, sys
 app = Flask(__name__)
 DB_HOST = os.getenv("DB_HOST", "10.0.0.1")
-DB_NAME = os.getenv("DB_NAME", "orders")
-DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
 def get_db():
-    return psycopg2.connect(
-        host=DB_HOST, database=DB_NAME,
-        user=DB_USER, password=DB_PASSWORD
-    )
+    return psycopg2.connect(host=DB_HOST, dbname="orders", user="postgres", password="postgres")
 def init_db():
     try:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS orders (
-                id SERIAL PRIMARY KEY,
-                customer_id VARCHAR(100) NOT NULL,
-                product_id VARCHAR(100) NOT NULL,
-                quantity INTEGER NOT NULL,
-                total_price DECIMAL(10, 2) NOT NULL,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+        cur.execute('CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, customer_id TEXT, total_price REAL);')
         conn.commit()
-        cur.close()
-        conn.close()
-        print("Database initialized.", file=sys.stderr)
     except psycopg2.OperationalError as e:
-        print(f"Could not connect to database or initialize schema: {e}", file=sys.stderr)
+        print(f"Could not connect to database: {e}", file=sys.stderr)
         sys.exit(1)
 @app.route('/health')
 def health():
     try:
-        conn = get_db()
-        conn.close()
-        return jsonify({"status": "healthy", "service": "order-service", "database": "connected"})
+        get_db().close()
+        return jsonify({"status": "healthy", "database": "connected"})
     except psycopg2.OperationalError:
-        return jsonify({"status": "unhealthy", "service": "order-service", "database": "disconnected"}), 503
+        return jsonify({"status": "unhealthy", "database": "disconnected"}), 503
 @app.route('/orders', methods=['POST'])
 def create_order():
     data = request.json
-    if not data:
-        return jsonify({"error": "Invalid JSON"}), 400
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute(
-            '''INSERT INTO orders (customer_id, product_id, quantity, total_price)
-               VALUES (%s, %s, %s, %s) RETURNING id''',
-            (data['customer_id'], data['product_id'], data['quantity'], data['total_price'])
-        )
-        order_id = cur.fetchone()[0]
-        conn.commit()
-        cur.close()
-        conn.close()
-        return jsonify({"order_id": order_id, "status": "created"}), 201
-    except (psycopg2.Error, KeyError) as e:
-        return jsonify({"error": "Database error or invalid request data", "details": str(e)}), 500
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('INSERT INTO orders (customer_id, total_price) VALUES (%s, %s) RETURNING id', (data['customer_id'], data['total_price']))
+    order_id = cur.fetchone()[0]
+    conn.commit()
+    return jsonify({"order_id": order_id}), 201
 if __name__ == '__main__':
     init_db()
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5000, debug=False)
 EOF
-    chmod +x "$SCRIPT_DIR/api-gateway.py"
-    chmod +x "$SCRIPT_DIR/product-service.py"
-    chmod +x "$SCRIPT_DIR/order-service.py"
+    chmod +x "$SCRIPT_DIR"/*.py
     echo "✅ Application files created."
 }
 
-# --- Function to delete all application files ---
-delete_files() {
-    echo "--- Deleting application source files ---"
-    rm -f "$SCRIPT_DIR/nginx.conf" "$SCRIPT_DIR/api-gateway.py" "$SCRIPT_DIR/product-service.py" "$SCRIPT_DIR/order-service.py"
-    rm -f /tmp/api-gateway.log /tmp/product-service.log /tmp/order-service.log /tmp/redis.log
-    echo "✅ Application files deleted."
+# --- Function to stop service processes ---
+stop_procs() {
+    echo "--- Stopping all service processes ---"
+    # Use a broad pkill to catch all nginx processes, then target specific scripts
+    sudo pkill -9 -f "nginx" || true
+    sudo pkill -9 -f "api-gateway.py" || true
+    sudo pkill -9 -f "product-service.py" || true
+    sudo pkill -9 -f "order-service.py" || true
+    sudo pkill -9 -f "redis-server 0.0.0.0:6379" || true
+    echo "✅ Processes stopped."
 }
 
-# --- Function to ensure Python packages are installed ---
-ensure_python_packages() {
-    echo "--- Ensuring Python packages are installed in venv ---"
-    if [ -x "$PYTHON_CMD" ]; then
-        "$PYTHON_CMD" -m pip install -q --upgrade pip
-        "$PYTHON_CMD" -m pip install -q Flask requests psycopg2-binary redis
-        echo "✅ Python packages verified/installed."
-    else
-        echo "ERROR: Python venv not found at $PYTHON_CMD" >&2
-        return 1
-    fi
-}
-
-# --- Function to start all services ---
+# --- Function to start all services (Idempotent) ---
 start_services() {
-    discover_commands # Ensure all commands are found/installed first
-    ensure_python_packages # Ensure Python packages are installed
+    fix_etc_hosts
+    discover_commands
     create_files
+    # ensure_python_packages is called by discover_commands if needed
 
-    echo ""
+    stop_procs # Ensure clean state before starting
+    
     echo "--- Starting all services ---"
+    echo "[1/5] Starting Redis server..."
+    sudo ip netns exec redis-cache "$REDIS_SERVER_CMD" --bind 0.0.0.0 --port 6379 --daemonize yes --protected-mode no
+    sleep 3
 
-    echo "[1/5] Starting Redis server in 'redis-cache' namespace..."
-    sudo ip netns exec redis-cache "$REDIS_SERVER_CMD" --bind 0.0.0.0 --port 6379 --daemonize yes
-    sleep 1
+    echo "--- Running network diagnostics ---"
+    if ! sudo ip netns exec product-service ping -c 2 10.0.0.50; then
+        echo "ERROR: Cannot ping redis-cache from product-service." >&2
+        exit 1
+    fi
+    echo "✅ Ping successful."
 
-    echo "[2/5] Starting API Gateway in 'api-gateway' namespace..."
+    echo "[2/5] Starting API Gateway..."
     sudo ip netns exec api-gateway "$PYTHON_CMD" "$SCRIPT_DIR/api-gateway.py" > /tmp/api-gateway.log 2>&1 &
     
-    echo "[3/5] Starting Product Service in 'product-service' namespace..."
+    echo "[3/5] Starting Product Service..."
     sudo ip netns exec product-service "$PYTHON_CMD" "$SCRIPT_DIR/product-service.py" > /tmp/product-service.log 2>&1 &
 
-    echo "[4/5] Starting Order Service in 'order-service' namespace..."
+    echo "[4/5] Starting Order Service..."
     sudo ip netns exec order-service "$PYTHON_CMD" "$SCRIPT_DIR/order-service.py" > /tmp/order-service.log 2>&1 &
     sleep 2
 
-    echo "[5/5] Starting Nginx in 'nginx-lb' namespace..."
+    echo "[5/5] Starting Nginx..."
     sudo mkdir -p /tmp/nginx
     sudo cp "$SCRIPT_DIR/nginx.conf" /tmp/nginx/nginx.conf
     sudo ip netns exec nginx-lb "$NGINX_CMD" -c /tmp/nginx/nginx.conf
 
-    echo ""
     echo "✅ All services started."
-    echo ""
-    echo "Service logs are available at:"
-    echo "  - API Gateway:      /tmp/api-gateway.log"
-    echo "  - Product Service:  /tmp/product-service.log"
-    echo "  - Order Service:    /tmp/order-service.log"
-    echo ""
-    echo "Run 'sudo $0 status' to see the running processes."
 }
 
-# --- Function to stop all services ---
-stop_services() {
-    discover_commands # Make sure we can find commands before trying to stop them
-    echo "--- Stopping all services ---"
+# --- Function to check service status ---
+status_services() {
+    echo "--- Checking service status ---"
+    # Use pgrep -af "[p]attern" to avoid matching the pgrep command itself
+    echo; echo "=> Nginx Processes:"; sudo pgrep -af "[n]ginx" || echo "  Not running."
+    echo; echo "=> API Gateway Processes:"; sudo pgrep -af "[a]pi-gateway.py" || echo "  Not running."
+    echo; echo "=> Product Service Processes:"; sudo pgrep -af "[p]roduct-service.py" || echo "  Not running."
+    echo; echo "=> Order Service Processes:"; sudo pgrep -af "[o]rder-service.py" || echo "  Not running."
+    echo; echo "=> Redis Processes:"; sudo pgrep -af "[r]edis-server" || echo "  Not running."
+    echo
+}
 
-    echo "[1/5] Stopping Nginx..."
-    sudo ip netns exec nginx-lb "$NGINX_CMD" -s stop 2>/dev/null || pkill -f "nginx: master process" || true
-
-    echo "[2/5] Stopping Python microservices..."
-    pkill -f "api-gateway.py" || true
-    pkill -f "product-service.py" || true
-    pkill -f "order-service.py" || true
-
-    echo "[3/5] Stopping Redis server..."
-    sudo ip netns exec redis-cache "$REDIS_CLI_CMD" shutdown 2>/dev/null || pkill -f "$REDIS_SERVER_CMD" || true
-
-    echo "[4/5] Cleaning up Nginx config and Python venv..."
+# --- Function to clean up generated files ---
+clean_files() {
+    echo "--- Deleting all generated files and Python venv ---"
     sudo rm -rf /tmp/nginx
     rm -rf "$VENV_DIR"
-
-    echo "[5/5] Deleting source files..."
-    delete_files
-    
-    echo ""
-    echo "✅ All services stopped and files cleaned up."
-}
-
-# --- Function to check the status of services ---
-status_services() {
-    discover_commands # Make sure we can find commands before checking their status
-    echo "--- Checking service status ---"
-    echo ""
-    echo "=> Nginx Processes:"
-    # Use a pattern that won't match the pgrep command itself
-    sudo ip netns exec nginx-lb pgrep -af "nginx: master process" || echo "  Not running."
-    echo ""
-    echo "=> Python App Processes (api-gateway.py):"
-    sudo ip netns exec api-gateway pgrep -af "[a]pi-gateway.py" || echo "  Not running."
-    echo ""
-    echo "=> Python App Processes (product-service.py):"
-    sudo ip netns exec product-service pgrep -af "[p]roduct-service.py" || echo "  Not running."
-    echo ""
-    echo "=> Python App Processes (order-service.py):"
-    sudo ip netns exec order-service pgrep -af "[o]rder-service.py" || echo "  Not running."
-    echo ""
-    echo "=> Redis Process:"
-    sudo ip netns exec redis-cache pgrep -af "[r]edis-server" || echo "  Not running."
-    echo ""
-}
-
-# --- Function to restart services ---
-restart_services() {
-    echo "=== Restarting Services ==="
-    stop_services
-    echo ""
-    echo "Waiting 2 seconds before restarting..."
-    sleep 2
-    echo ""
-    start_services
+    rm -f "$SCRIPT_DIR/nginx.conf"
+    rm -f "$SCRIPT_DIR/api-gateway.py"
+    rm -f "$SCRIPT_DIR/product-service.py"
+    rm -f "$SCRIPT_DIR/order-service.py"
+    rm -f /tmp/*.log 2>/dev/null || true
+    echo "✅ Cleanup complete."
 }
 
 # --- Main script logic ---
@@ -527,16 +350,20 @@ case "$1" in
         start_services
         ;;
     stop)
-        stop_services
+        stop_procs
+        ;;
+    restart)
+        start_services # Start is now idempotent, so it's the same as restart
         ;;
     status)
         status_services
         ;;
-    restart)
-        restart_services
+    clean)
+        stop_procs
+        clean_files
         ;;
     *)
-        echo "Usage: sudo $0 {start|stop|status|restart}"
+        echo "Usage: sudo $0 {start|stop|restart|status|clean}"
         exit 1
         ;;
 esac

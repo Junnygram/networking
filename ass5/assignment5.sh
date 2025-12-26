@@ -252,14 +252,35 @@ from flask import Flask, jsonify
 import redis
 import json
 import os
+import time
+import sys
+
 app = Flask(__name__)
 REDIS_HOST = os.getenv("REDIS_HOST", "redis-cache")
-cache = redis.Redis(host=REDIS_HOST, port=6379, decode_responses=True)
+cache = redis.Redis(host=REDIS_HOST, port=6379, decode_responses=True, socket_connect_timeout=2)
+
 PRODUCTS = {
     "1": {"id": "1", "name": "Laptop", "price": 999.99, "stock": 50},
     "2": {"id": "2", "name": "Mouse", "price": 29.99, "stock": 200},
     "3": {"id": "3", "name": "Keyboard", "price": 79.99, "stock": 150},
 }
+
+def wait_for_redis():
+    """Wait for redis to become available."""
+    retries = 15
+    print("--- Checking for Redis connectivity ---", file=sys.stderr)
+    while retries > 0:
+        try:
+            cache.ping()
+            print("✅ Successfully connected to Redis.", file=sys.stderr)
+            return True
+        except redis.exceptions.ConnectionError as e:
+            print(f"Waiting for Redis... ({retries} retries left)", file=sys.stderr)
+            retries -= 1
+            time.sleep(2)
+    print("❌ Could not connect to Redis after multiple retries. Exiting.", file=sys.stderr)
+    return False
+
 @app.route('/health')
 def health():
     try:
@@ -298,48 +319,69 @@ def get_product(product_id):
         pass
     return jsonify(product)
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    if wait_for_redis():
+        app.run(host='0.0.0.0', port=5000)
+    else:
+        sys.exit(1)
 EOF
     cat <<'EOF' > order-service.py
 from flask import Flask, jsonify, request
 import psycopg2
 import os
 import sys
+import time
+
 app = Flask(__name__)
 DB_HOST = os.getenv("DB_HOST", "postgres-db")
 DB_NAME = os.getenv("DB_NAME", "orders")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
-def get_db():
+
+def get_db_connection():
     return psycopg2.connect(
         host=DB_HOST, database=DB_NAME,
         user=DB_USER, password=DB_PASSWORD
     )
+
+def wait_for_db():
+    """Wait for the database to become available."""
+    retries = 15
+    print("--- Checking for Database connectivity ---", file=sys.stderr)
+    while retries > 0:
+        try:
+            conn = get_db_connection()
+            conn.close()
+            print("✅ Successfully connected to Database.", file=sys.stderr)
+            return True
+        except psycopg2.OperationalError as e:
+            print(f"Waiting for Database... ({retries} retries left)", file=sys.stderr)
+            retries -= 1
+            time.sleep(2)
+    print("❌ Could not connect to Database after multiple retries. Exiting.", file=sys.stderr)
+    return False
+
 def init_db():
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS orders (
-                id SERIAL PRIMARY KEY,
-                customer_id VARCHAR(100) NOT NULL,
-                product_id VARCHAR(100) NOT NULL,
-                quantity INTEGER NOT NULL,
-                total_price DECIMAL(10, 2) NOT NULL,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        conn.commit()
-        cur.close()
-        conn.close()
-        print("Database initialized.", file=sys.stderr)
-    except psycopg2.OperationalError as e:
-        print(f"Could not connect to database or initialize schema: {e}", file=sys.stderr)
-        sys.exit(1)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS orders (
+            id SERIAL PRIMARY KEY,
+            customer_id VARCHAR(100) NOT NULL,
+            product_id VARCHAR(100) NOT NULL,
+            quantity INTEGER NOT NULL,
+            total_price DECIMAL(10, 2) NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    cur.close()
+    conn.close()
+    print("Database schema initialized.", file=sys.stderr)
+
 @app.route('/health')
 def health():
     try:
-        conn = get_db()
+        conn = get_db_connection()
         conn.close()
         return jsonify({"status": "healthy", "service": "order-service", "database": "connected"})
     except psycopg2.OperationalError:
@@ -350,7 +392,7 @@ def create_order():
     if not data:
         return jsonify({"error": "Invalid JSON"}), 400
     try:
-        conn = get_db()
+        conn = get_db_connection()
         cur = conn.cursor()
         cur.execute(
             '''INSERT INTO orders (customer_id, product_id, quantity, total_price)
@@ -365,8 +407,11 @@ def create_order():
     except (psycopg2.Error, KeyError) as e:
         return jsonify({"error": "Database error or invalid request data", "details": str(e)}), 500
 if __name__ == '__main__':
-    init_db()
-    app.run(host='0.0.0.0', port=5000)
+    if wait_for_db():
+        init_db()
+        app.run(host='0.0.0.0', port=5000)
+    else:
+        sys.exit(1)
 EOF
     cat <<'EOF' > nginx.conf
 events {
