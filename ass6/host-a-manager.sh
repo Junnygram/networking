@@ -1,6 +1,6 @@
 #!/bin/bash
 # ===================================================================================
-# HOST A (MANAGER) SETUP SCRIPT - Assignment 6: Multi-Host Networking (v2)
+# HOST A (MANAGER) SETUP SCRIPT - Assignment 6: Multi-Host Networking (v2.1)
 #
 # This script manages the Docker Swarm Manager node.
 #
@@ -26,10 +26,15 @@ do_init() {
         echo "💡 Please run the following command to start a new shell with the correct permissions:"
         echo "   newgrp docker"
         echo ""
-        echo "Then, from the new shell, re-run this script: ./updtedhost.sh init $MANAGER_IP"
+        echo "Then, from the new shell, re-run this script: $0 init $MANAGER_IP"
         exit 1
     fi
     echo "✅ Docker permissions are correct."
+
+    # Added: Restart Docker daemon to ensure a clean state before Swarm init
+    echo "--- Restarting Docker Daemon for a clean Swarm state ---"
+    sudo systemctl restart docker
+    sleep 5 # Give Docker a moment to restart
 
     # 2. Initialize the Swarm.
     echo "--- Initializing Docker Swarm ---"
@@ -48,6 +53,10 @@ do_init() {
     JOIN_CMD=$(docker swarm join-token worker | grep "docker swarm join")
     echo "$JOIN_CMD"
     echo "⬆️⬆️⬆️ RUN THIS COMMAND ON YOUR WORKER NODES ⬆️⬆️⬆️"
+    echo ""
+    echo "💡 IMPORTANT: For the worker to join successfully, your cloud provider's firewall (e.g., AWS Security Group)"
+    echo "must allow traffic between the manager and worker nodes. See the README for details."
+
 }
 
 do_deploy() {

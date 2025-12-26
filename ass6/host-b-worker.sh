@@ -1,18 +1,8 @@
 #!/bin/bash
 # ===================================================================================
-# HOST B (WORKER) SETUP SCRIPT - Assignment 6: Multi-Host Networking
+# HOST B (WORKER) SETUP SCRIPT - Assignment 6: Multi-Host Networking (v2.1)
 #
 # This script manages a Docker Swarm Worker node.
-#
-# Usage:
-#   ./host-b-worker.sh init
-#       - Installs Docker Engine on the worker machine.
-#
-#   ./host-b-worker.sh join
-#       - Prompts for the join command from the manager to connect to the Swarm.
-#
-#   ./host-b-worker.sh cleanup
-#       - Makes the node leave the Swarm.
 #
 # ===================================================================================
 
@@ -81,6 +71,9 @@ do_join() {
         sleep 2
     fi
 
+    echo ""
+    echo "💡 If this command times out, it is likely a firewall or Security Group issue."
+    echo "   Ensure the manager node allows traffic from this worker node (see README)."
     echo "Please paste the full 'docker swarm join ...' command from the manager node:"
     read -p "> " JOIN_CMD
 
@@ -102,7 +95,6 @@ do_cleanup() {
     echo "✅ Cleanup complete."
 }
 
-
 # --- Main script logic ---
 CMD=$1
 
@@ -115,9 +107,9 @@ case "$CMD" in
     cleanup) do_cleanup;; 
     *) 
         echo "Usage: $0 {init|join|cleanup}" >&2
-        echo "  - init: Installs Docker."
+        echo "  - init: Installs Docker and sets up permissions."
         echo "  - join: Prompts for the manager's command to join the Swarm."
-        echo "  - cleanup: Forces the node to leave the Swarm."
+        echo "  - cleanup: Leaves the Swarm."
         exit 1
         ;; 
 esac
