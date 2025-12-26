@@ -63,9 +63,11 @@ install_prerequisites() {
     PG_CONF=$(sudo find /etc/postgresql -name "postgresql.conf" | head -n 1)
     if [ -n "$PG_CONF" ]; then
         echo "Configuring PostgreSQL to accept network connections..."
-        # Allow connections from all network interfaces
-        sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/
-        sudo sed -i "s/listen_addresses = 'localhost'/listen_addresses = '*'/
+        # Be robust to both 'localhost' and '127.0.0.1' and commented/uncommented lines.
+        sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" "$PG_CONF"
+        sudo sed -i "s/listen_addresses = 'localhost'/listen_addresses = '*'/" "$PG_CONF"
+        sudo sed -i "s/#listen_addresses = '127.0.0.1'/listen_addresses = '*'/" "$PG_CONF"
+        sudo sed -i "s/listen_addresses = '127.0.0.1'/listen_addresses = '*'/" "$PG_CONF"
 
         # Find the pg_hba.conf file in the same directory
         PG_HBA_CONF="${PG_CONF%/*}/pg_hba.conf"
@@ -181,9 +183,9 @@ discover_commands() {
 
 # --- Function to create all application files ---
 create_files() {
-    echo "--- Creating application source files ---"
-    
-    cat <<'EOF' > nginx.conf
+    echo "--- Creating application source files in $SCRIPT_DIR ---"
+
+    cat <<'EOF' > "$SCRIPT_DIR/nginx.conf"
 events {
     worker_connections 1024;
 }
@@ -207,7 +209,7 @@ http {
     }
 }
 EOF
-    cat <<'EOF' > api-gateway.py
+    cat <<'EOF' > "$SCRIPT_DIR/api-gateway.py"
 from flask import Flask, jsonify, request
 import requests
 import os
@@ -244,19 +246,40 @@ def create_order():
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3000)
 EOF
-    cat <<'EOF' > product-service.py
+    cat <<'EOF' > "$SCRIPT_DIR/product-service.py"
 from flask import Flask, jsonify
 import redis
 import json
 import os
+import time
+import sys
+
 app = Flask(__name__)
 REDIS_HOST = os.getenv("REDIS_HOST", "10.0.0.50")
-cache = redis.Redis(host=REDIS_HOST, port=6379, decode_responses=True)
+cache = redis.Redis(host=REDIS_HOST, port=6379, decode_responses=True, socket_connect_timeout=1)
+
 PRODUCTS = {
     "1": {"id": "1", "name": "Laptop", "price": 999.99, "stock": 50},
     "2": {"id": "2", "name": "Mouse", "price": 29.99, "stock": 200},
     "3": {"id": "3", "name": "Keyboard", "price": 79.99, "stock": 150},
 }
+
+def wait_for_redis():
+    """Wait for redis to become available."""
+    retries = 10
+    print("--- Checking for Redis connectivity ---", file=sys.stderr)
+    while retries > 0:
+        try:
+            cache.ping()
+            print("✅ Successfully connected to Redis.", file=sys.stderr)
+            return True
+        except redis.exceptions.ConnectionError as e:
+            print(f"Waiting for Redis... ({retries} retries left)", file=sys.stderr)
+            retries -= 1
+            time.sleep(1)
+    print("❌ Could not connect to Redis after multiple retries. Exiting.", file=sys.stderr)
+    return False
+
 @app.route('/health')
 def health():
     try:
@@ -264,6 +287,7 @@ def health():
         return jsonify({"status": "healthy", "service": "product-service", "cache": "connected"})
     except redis.exceptions.ConnectionError:
         return jsonify({"status": "unhealthy", "service": "product-service", "cache": "disconnected"}), 503
+
 @app.route('/products', methods=['GET'])
 def get_products():
     try:
@@ -278,6 +302,7 @@ def get_products():
     except redis.exceptions.ConnectionError:
         pass
     return jsonify(products)
+
 @app.route('/products/<product_id>', methods=['GET'])
 def get_product(product_id):
     try:
@@ -294,10 +319,14 @@ def get_product(product_id):
     except redis.exceptions.ConnectionError:
         pass
     return jsonify(product)
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    if wait_for_redis():
+        app.run(host='0.0.0.0', port=5000)
+    else:
+        sys.exit(1)
 EOF
-    cat <<'EOF' > order-service.py
+    cat <<'EOF' > "$SCRIPT_DIR/order-service.py"
 from flask import Flask, jsonify, request
 import psycopg2
 import os
@@ -365,21 +394,39 @@ if __name__ == '__main__':
     init_db()
     app.run(host='0.0.0.0', port=5000)
 EOF
+    chmod +x "$SCRIPT_DIR/api-gateway.py"
+    chmod +x "$SCRIPT_DIR/product-service.py"
+    chmod +x "$SCRIPT_DIR/order-service.py"
     echo "✅ Application files created."
 }
 
 # --- Function to delete all application files ---
 delete_files() {
     echo "--- Deleting application source files ---"
-    rm -f nginx.conf api-gateway.py product-service.py order-service.py
+    rm -f "$SCRIPT_DIR/nginx.conf" "$SCRIPT_DIR/api-gateway.py" "$SCRIPT_DIR/product-service.py" "$SCRIPT_DIR/order-service.py"
+    rm -f /tmp/api-gateway.log /tmp/product-service.log /tmp/order-service.log /tmp/redis.log
     echo "✅ Application files deleted."
+}
+
+# --- Function to ensure Python packages are installed ---
+ensure_python_packages() {
+    echo "--- Ensuring Python packages are installed in venv ---"
+    if [ -x "$PYTHON_CMD" ]; then
+        "$PYTHON_CMD" -m pip install -q --upgrade pip
+        "$PYTHON_CMD" -m pip install -q Flask requests psycopg2-binary redis
+        echo "✅ Python packages verified/installed."
+    else
+        echo "ERROR: Python venv not found at $PYTHON_CMD" >&2
+        return 1
+    fi
 }
 
 # --- Function to start all services ---
 start_services() {
     discover_commands # Ensure all commands are found/installed first
+    ensure_python_packages # Ensure Python packages are installed
     create_files
-    
+
     echo ""
     echo "--- Starting all services ---"
 
@@ -388,23 +435,29 @@ start_services() {
     sleep 1
 
     echo "[2/5] Starting API Gateway in 'api-gateway' namespace..."
-    sudo ip netns exec api-gateway "$PYTHON_CMD" api-gateway.py > /dev/null 2>&1 &
+    sudo ip netns exec api-gateway "$PYTHON_CMD" "$SCRIPT_DIR/api-gateway.py" > /tmp/api-gateway.log 2>&1 &
     
     echo "[3/5] Starting Product Service in 'product-service' namespace..."
-    sudo ip netns exec product-service "$PYTHON_CMD" product-service.py > /dev/null 2>&1 &
+    sudo ip netns exec product-service "$PYTHON_CMD" "$SCRIPT_DIR/product-service.py" > /tmp/product-service.log 2>&1 &
 
     echo "[4/5] Starting Order Service in 'order-service' namespace..."
-    sudo ip netns exec order-service "$PYTHON_CMD" order-service.py > /dev/null 2>&1 &
-    sleep 1
+    sudo ip netns exec order-service "$PYTHON_CMD" "$SCRIPT_DIR/order-service.py" > /tmp/order-service.log 2>&1 &
+    sleep 2
 
     echo "[5/5] Starting Nginx in 'nginx-lb' namespace..."
     sudo mkdir -p /tmp/nginx
-    sudo cp nginx.conf /tmp/nginx/nginx.conf
+    sudo cp "$SCRIPT_DIR/nginx.conf" /tmp/nginx/nginx.conf
     sudo ip netns exec nginx-lb "$NGINX_CMD" -c /tmp/nginx/nginx.conf
 
     echo ""
     echo "✅ All services started."
-    echo "Run 'sudo ./assignment2.sh status' to see the running processes."
+    echo ""
+    echo "Service logs are available at:"
+    echo "  - API Gateway:      /tmp/api-gateway.log"
+    echo "  - Product Service:  /tmp/product-service.log"
+    echo "  - Order Service:    /tmp/order-service.log"
+    echo ""
+    echo "Run 'sudo $0 status' to see the running processes."
 }
 
 # --- Function to stop all services ---
@@ -457,6 +510,17 @@ status_services() {
     echo ""
 }
 
+# --- Function to restart services ---
+restart_services() {
+    echo "=== Restarting Services ==="
+    stop_services
+    echo ""
+    echo "Waiting 2 seconds before restarting..."
+    sleep 2
+    echo ""
+    start_services
+}
+
 # --- Main script logic ---
 case "$1" in
     start)
@@ -468,8 +532,11 @@ case "$1" in
     status)
         status_services
         ;;
+    restart)
+        restart_services
+        ;;
     *)
-        echo "Usage: sudo $0 {start|stop|status}"
+        echo "Usage: sudo $0 {start|stop|status|restart}"
         exit 1
         ;;
 esac
