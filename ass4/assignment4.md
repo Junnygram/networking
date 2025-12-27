@@ -34,38 +34,9 @@ The implementation consolidated these features into a single, professional toolk
 | **Security Policies**   | A static list of `iptables` rules.     | A complete implementation that correctly sets a **default `DROP` policy** on the `FORWARD` chain before adding `ACCEPT` rules. It also includes a rule for `ESTABLISHED,RELATED` traffic. | This is the correct way to implement a "default deny" firewall. The original plan was insecure because it didn't block unspecified traffic. The inclusion of the conntrack rule is essential for stateful connections to work. |
 
 <!-- Image Placeholder: Service Registry Output -->
-To demonstrate the service registry:
-
-```bash
-# 1. Start the service registry (runs in background)
-sudo ./assignment4.sh start-registry
-images/registry
-
-# 2. Register a dummy service (example)
-curl -X POST -H "Content-Type: application/json" -d '{"name": "test-service", "ip": "10.0.0.99", "port": 1234}' http://127.0.0.1:8500/register
-
-# 3. List all registered services (this is what the screenshot would capture)
-curl http://127.0.0.1:8500/services
-
-# (Optional: stop the registry after testing)
-# sudo ./assignment4.sh stop-registry
-```
+![Service Registry Output](images/registry)
 <!-- Image Placeholder: iptables Security Policy Rules -->
-To apply and then inspect the iptables security policies:
-
-```bash
-# 1. Apply the security policies (sets default DROP and adds ACCEPT rules)
-sudo ./assignment4.sh apply-policies
-
-# 2. Show the active FORWARD chain iptables rules (this is what the screenshot would capture)
-sudo ./assignment4.sh show-policies
-
-
-images/policy.png
-
-# (Optional: remove policies after testing)
-# sudo ./assignment4.sh remove-policies
-```
+![iptables Security Policy Rules](images/policy.png)
 
 ---
 

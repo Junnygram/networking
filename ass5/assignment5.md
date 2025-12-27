@@ -45,51 +45,8 @@ The `assignment5.sh` script deploys the exact same logical architecture as the s
 *   **Data Persistence**: A named volume (`postgres_data`) is used to ensure that PostgreSQL data survives container restarts.
 
 <!-- Image Placeholder: Docker Architecture Diagram -->
-A visual diagram depicting the Dockerized architecture would go here.
-For CLI verification of the deployed Docker services and networks after running `sudo ./ass5.sh start`:
-
-```bash
-# 1. List all running Docker containers
-docker ps
-
-# 2. List all Docker networks
-docker network ls
-
-# 3. List all Docker volumes
-docker volume ls
-```
+<!-- e.g. ![Docker Architecture Diagram](images/docker_architecture.png) -->
 <!-- Image Placeholder: Output of `docker compose up` -->
-To see the output of the Docker Compose services after they have been started by `sudo ./ass5.sh start`:
-
-```bash
-# First, ensure services are started
-sudo ./ass5.sh start
-
-# Then, navigate to the directory where docker-compose.yml was generated (usually the current directory)
-# cd .
-
-# View the logs of all services
-docker compose logs
-```
-
-images/log.png
-images/log2.png
+![Docker Compose Up Output](images/log.png)
 <!-- Image Placeholder: Output of Benchmark Comparison -->
-To run the performance benchmark against the Dockerized application:
-
-```bash
-# Ensure services are started before benchmarking
-sudo ./ass5.sh start
-
-images/first.png
-images/second.png
-
-# Run the benchmark
-sudo ./ass5.sh benchmark
-```
-
-
-images/benchmark.png
-
-
-images/clean.png
+![Benchmark Comparison Output](images/benchmark.png)
