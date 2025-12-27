@@ -38,6 +38,16 @@ Once the cluster is formed, the `docker-compose.yml` file is used to deploy the 
 *   **Placement Constraints:** It uses `deploy.placement.constraints` to intelligently place services, such as ensuring the PostgreSQL database runs on a manager node.
 
 <!-- Image Placeholder: Docker Swarm Multi-Host Architecture Diagram -->
+A visual diagram depicting the multi-host Docker Swarm architecture would go here.
+For CLI verification of the Swarm cluster after setup (run these commands on the manager node):
+
+```bash
+# 1. List all Docker Swarm nodes (manager and workers)
+docker node ls
+
+# 2. List all Docker Swarm overlay networks
+docker network ls
+```
 
 ### b. The "Development" Workflow (`manager.sh`)
 
@@ -59,4 +69,16 @@ This script is a valuable tool for quick iteration but was superseded by the mor
 | **Deployment Model**    | All images built and run from the local filesystem.             | The definitive workflow uses **pre-built images from a container registry**, decoupling the build process from the deployment process. | This is how modern CI/CD pipelines work. It ensures that the exact same tested image is deployed to all environments, from staging to production.                                                                                                |
 
 <!-- Image Placeholder: Output of `docker node ls` showing manager and worker -->
+To show the manager and worker nodes in the Docker Swarm (run this on the manager node after a worker has joined):
+
+```bash
+# List all Docker Swarm nodes
+docker node ls
+```
 <!-- Image Placeholder: Output of `docker service ls` showing replicated services -->
+To show the replicated services deployed to the Docker Swarm (run this on the manager node after `deploy`):
+
+```bash
+# List all services deployed to the Swarm
+docker service ls
+```

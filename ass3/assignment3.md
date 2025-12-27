@@ -24,6 +24,13 @@ The toolkit is invoked with a command specifying the desired tool:
 *   `sudo ./assignment3.sh topology`: Generates and displays a text-based network diagram.
 
 <!-- Image Placeholder: Architecture Diagram showing Monitoring Tools -->
+A visual architecture diagram illustrating the monitoring tools' interaction with the deployed services would typically go here.
+For a CLI-based visualization of the network topology, you can use the `topology` tool:
+
+```bash
+# Display a text-based network topology diagram
+sudo ./assignment3.sh topology
+```
 
 ## 3. Key Changes and Justifications
 
@@ -45,18 +52,47 @@ The `assignment3.sh` script provides the following capabilities:
 Uses `tcpdump` to capture and display all network packets flowing across the `br0` bridge. This is invaluable for low-level debugging of service-to-service communication.
 
 <!-- Image Placeholder: Output of the 'traffic' command -->
+To capture and display network traffic on the bridge:
+
+```bash
+# Run the traffic monitor (Press Ctrl+C to stop after capturing sufficient output for a screenshot)
+sudo ./assignment3.sh traffic
+```
 
 ### b. Health Checker (`health`)
 Runs a continuous loop that sends HTTP requests to the `/health` endpoint of each service. It reports the status (UP/DOWN) and response latency, providing a real-time dashboard of service availability.
 
 <!-- Image Placeholder: Output of the 'health' command -->
+To continuously check the health of all services:
+
+```bash
+# Run the health monitor (Press Ctrl+C to stop after observing output)
+sudo ./assignment3.sh health
+```
 
 ### c. Connection Tracker (`connections`)
 Provides a snapshot, updated every 5 seconds, of active network connections. It shows the number of established connections per namespace and a summary of connection states from the kernel's `conntrack` table.
 
 <!-- Image Placeholder: Output of the 'connections' command -->
+To track active network connections:
+
+```bash
+# Run the connection tracker (Press Ctrl+C to stop after observing output)
+sudo ./assignment3.sh connections
+```
+
+images/connections
 
 ### d. Topology Visualizer (`topology`)
 Inspects the system's network namespaces and their IP addresses to generate a clear, text-based diagram of the entire network architecture, from the host down to each individual service.
 
 <!-- Image Placeholder: Output of the 'topology' command -->
+To display a text-based network topology diagram:
+
+```bash
+# Run the topology visualizer
+sudo ./assignment3.sh topology
+```
+
+
+images/topology.png

@@ -26,8 +26,6 @@ The script provides the following commands:
 *   `sudo ./assignment2.sh status`: Shows the status of all running processes.
 *   `sudo ./assignment2.sh clean`: Removes all generated files and the Python virtual environment.
 
-<!-- Image Placeholder: Architecture Diagram of Deployed Services -->
-
 ## 3. Key Changes and Justifications
 
 The implementation introduced critical improvements over the original plan.
@@ -55,5 +53,29 @@ The script deploys the following services into their respective namespaces:
 The script ensures that these services are started in the correct order and can communicate with each other over the virtual network.
 
 <!-- Image Placeholder: Output of 'assignment2.sh start' command -->
+The output of running the start command would look like this:
+
+```bash
+sudo ./assignment2.sh start
+```
 <!-- Image Placeholder: Output of 'assignment2.sh status' command -->
+The output of running the status command would look like this:
+
+```bash
+sudo ./assignment2.sh status
+```
+
+
+images/status.png
 <!-- Image Placeholder: Successful API request to the running services -->
+To perform a successful API request after starting the services (assuming host can reach 10.0.0.10, which it should after `assignment1.sh` setup):
+
+```bash
+# Request products through the Nginx load balancer
+curl http://10.0.0.10/api/products
+
+# You can also test the health endpoint of the API Gateway directly through Nginx
+# curl http://10.0.0.10/health
+```
+
+images/health.png
