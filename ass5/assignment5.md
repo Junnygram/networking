@@ -46,7 +46,15 @@ The `assignment5.sh` script deploys the exact same logical architecture as the s
 
 <!-- Image Placeholder: Docker Architecture Diagram -->
 <!-- e.g. ![Docker Architecture Diagram](images/docker_architecture.png) -->
+
+
+
+![Docker Start1](images/first.png)
+![Docker Start2](images/second.png)
 <!-- Image Placeholder: Output of `docker compose up` -->
 ![Docker Compose Up Output](images/log.png)
+![Docker Compose Up Output](images/log2.png)
+
+
 <!-- Image Placeholder: Output of Benchmark Comparison -->
 ![Benchmark Comparison Output](images/benchmark.png)

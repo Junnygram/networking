@@ -34,7 +34,7 @@ The implementation consolidated these features into a single, professional toolk
 | **Security Policies**   | A static list of `iptables` rules.     | A complete implementation that correctly sets a **default `DROP` policy** on the `FORWARD` chain before adding `ACCEPT` rules. It also includes a rule for `ESTABLISHED,RELATED` traffic. | This is the correct way to implement a "default deny" firewall. The original plan was insecure because it didn't block unspecified traffic. The inclusion of the conntrack rule is essential for stateful connections to work. |
 
 <!-- Image Placeholder: Service Registry Output -->
-![Service Registry Output](images/registry)
+![Service Registry Output](images/registry.png)
 <!-- Image Placeholder: iptables Security Policy Rules -->
 ![iptables Security Policy Rules](images/policy.png)
 

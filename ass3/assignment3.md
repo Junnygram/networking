@@ -58,7 +58,7 @@ Runs a continuous loop that sends HTTP requests to the `/health` endpoint of eac
 Provides a snapshot, updated every 5 seconds, of active network connections. It shows the number of established connections per namespace and a summary of connection states from the kernel's `conntrack` table.
 
 <!-- Image Placeholder: Output of the 'connections' command -->
-![Connections Output](images/connections)
+![Connections Output](images/connections.png)
 
 ### d. Topology Visualizer (`topology`)
 Inspects the system's network namespaces and their IP addresses to generate a clear, text-based diagram of the entire network architecture, from the host down to each individual service.
