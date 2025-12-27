@@ -14,10 +14,7 @@ check_docker_permissions() {
         echo "❌ ERROR: Your user ('$USER') cannot connect to the Docker daemon."
         echo "This is likely because you have just been added to the 'docker' group."
         echo ""
-        echo "💡 Please run the following command to start a new shell with the correct permissions:"
-        echo "   newgrp docker"
-        echo ""
-        echo "Then, from the new shell, re-run this script."
+        echo "💡 Please run 'newgrp docker' or log out and log back in to apply the change."
         exit 1
     fi
     echo "✅ Docker permissions are correct."

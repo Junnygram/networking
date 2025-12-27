@@ -82,3 +82,19 @@ To show the replicated services deployed to the Docker Swarm (run this on the ma
 # List all services deployed to the Swarm
 docker service ls
 ```
+
+
+
+
+<!-- Image Placeholder: Service Registry Output -->
+![Service Registry Output](images/1.png)
+<!-- Image Placeholder: iptables Security Policy Rules -->
+![iptables Security Policy Rules](images/2.png)
+<!-- Image Placeholder: Service Registry Output -->
+![Service Registry Output](images/3.png)
+<!-- Image Placeholder: iptables Security Policy Rules -->
+![iptables Security Policy Rules](images/4.png)
+<!-- Image Placeholder: Service Registry Output -->
+![Service Registry Output](images/5.png)
+<!-- Image Placeholder: iptables Security Policy Rules -->
+![iptables Security Policy Rules](images/6.png)

@@ -15,6 +15,54 @@
 
 set -e
 
+# --- Helper Functions ---
+check_docker_permissions() {
+    if ! docker info > /dev/null 2>&1; then
+        echo "❌ ERROR: Your user ('$USER') cannot connect to the Docker daemon."
+        echo "This is likely because you have just been added to the 'docker' group."
+        echo ""
+        echo "💡 Please run 'newgrp docker' or log out and log back in to apply the change."
+        exit 1
+    fi
+    # Docker daemon might not be running if permissions are fine but Docker was just installed.
+    # Attempt to start if it's not running
+    if ! docker info > /dev/null 2>&1; then
+        echo "💡 Docker daemon not running. Attempting to start it..."
+        sudo systemctl start docker || true
+        sleep 2 # Give it a moment to start
+        if ! docker info > /dev/null 2>&1; then
+             echo "❌ Failed to start Docker daemon. Please investigate."
+             exit 1
+        fi
+    fi
+    echo "✅ Docker permissions are correct and daemon is running."
+}
+
+install_docker() {
+    if command -v docker >/dev/null; then
+        echo "✅ Docker is already installed."
+    else
+        echo "--- Installing Docker Engine ---"
+        sudo apt-get update
+        sudo apt-get install -y ca-certificates curl
+        sudo install -m 0755 -d /etc/apt/keyrings
+        sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+        sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+        echo \
+          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+          $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+          sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+        sudo apt-get update
+        sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+        echo "✅ Docker installation complete."
+    fi
+    sudo groupadd docker || true # Ensure docker group exists
+    sudo usermod -aG docker "$USER"
+    echo "✅ User '$USER' added to 'docker' group (if not already)."
+    echo "IMPORTANT: If you just installed Docker or added yourself to the group, you MAY need to run 'newgrp docker' or log out/in."
+}
+
 # This function generates all the necessary source files
 outputfile() {
     echo "--- Generating source files... ---"
@@ -171,10 +219,8 @@ clean() {
 # --- Main script logic ---
 CMD=$1
 
-if ! docker info > /dev/null 2>&1; then
-    echo "❌ Docker permissions error. Did you run 'newgrp docker'?" >&2
-    exit 1
-fi
+install_docker
+check_docker_permissions
 
 case "$CMD" in
     outputfile) outputfile;;

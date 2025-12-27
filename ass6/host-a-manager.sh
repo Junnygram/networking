@@ -8,6 +8,43 @@
 
 set -e
 
+# --- Helper Functions ---
+check_docker_permissions() {
+    if ! docker info > /dev/null 2>&1; then
+        echo "❌ ERROR: Your user ('$USER') cannot connect to the Docker daemon."
+        echo "This is likely because you have just been added to the 'docker' group."
+        echo ""
+        echo "💡 Please run 'newgrp docker' or log out and log back in to apply the change."
+        exit 1
+    fi
+    echo "✅ Docker permissions are correct."
+}
+
+install_docker() {
+    if command -v docker >/dev/null; then
+        echo "✅ Docker is already installed."
+    else
+        echo "--- Installing Docker Engine ---"
+        sudo apt-get update
+        sudo apt-get install -y ca-certificates curl
+        sudo install -m 0755 -d /etc/apt/keyrings
+        sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+        sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+        echo \
+          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+          $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+          sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+        sudo apt-get update
+        sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+        echo "✅ Docker installation complete."
+    fi
+    sudo groupadd docker || true # Ensure docker group exists
+    sudo usermod -aG docker "$USER"
+    echo "✅ User '$USER' added to 'docker' group (if not already)."
+    echo "IMPORTANT: If you just installed Docker or added yourself to the group, you MAY need to run 'newgrp docker' or log out/in."
+}
+
 # --- Command Functions ---
 
 do_init() {
@@ -18,18 +55,9 @@ do_init() {
         exit 1
     fi
 
-    # 1. Check for Docker permissions.
-    if ! docker info > /dev/null 2>&1; then
-        echo "❌ ERROR: Your user ('$USER') cannot connect to the Docker daemon."
-        echo "This is likely because you have just been added to the 'docker' group."
-        echo ""
-        echo "💡 Please run the following command to start a new shell with the correct permissions:"
-        echo "   newgrp docker"
-        echo ""
-        echo "Then, from the new shell, re-run this script: $0 init $MANAGER_IP"
-        exit 1
-    fi
-    echo "✅ Docker permissions are correct."
+    # 1. Ensure Docker is installed and permissions are set.
+    install_docker
+    check_docker_permissions
 
     # Added: Restart Docker daemon to ensure a clean state before Swarm init
     echo "--- Restarting Docker Daemon for a clean Swarm state ---"
@@ -60,10 +88,7 @@ do_init() {
 }
 
 do_deploy() {
-    if ! docker info > /dev/null 2>&1; then
-        echo "❌ ERROR: Docker permissions incorrect. Please run 'newgrp docker' and try again." >&2
-        exit 1
-    fi
+    check_docker_permissions
     if [ ! -f "docker-compose.yml" ]; then
         echo "❌ ERROR: docker-compose.yml not found in the current directory." >&2
         exit 1
@@ -76,10 +101,7 @@ do_deploy() {
 }
 
 do_cleanup() {
-    if ! docker info > /dev/null 2>&1; then
-        echo "❌ ERROR: Docker permissions incorrect. Please run 'newgrp docker' and try again." >&2
-        exit 1
-    fi
+    check_docker_permissions
     echo "--- Cleaning up Docker Swarm ---"
     echo "Removing application stack 'myapp'..."
     docker stack rm myapp || echo "Stack 'myapp' not found or already removed."
