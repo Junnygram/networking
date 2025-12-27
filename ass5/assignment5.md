@@ -1,248 +1,49 @@
 # Assignment 5: Docker Migration and Optimization
 
-This assignment focuses on migrating the application infrastructure from pure Linux primitives to a Docker-based setup. You will containerize each service, orchestrate them using Docker Compose, and perform basic performance comparisons.
+This document details the migration of the entire microservices application from a setup based on Linux primitives to a fully containerized architecture orchestrated by Docker Compose. This marks a critical step towards a modern, portable, and scalable deployment strategy.
 
----
+## 1. Original Plan
 
-## ⚠️ Step 0: Prerequisites
+The original plan for Day 5 involved a manual, step-by-step process:
+*   Manually installing Docker, Docker Compose, and other tool-related dependencies.
+*   Manually creating individual `Dockerfile`s for each of the four main services.
+*   Manually writing a `docker-compose.yml` file to define the services and their networks.
+*   Copying the application code from previous assignments, which lacked resilience against the startup timing issues (race conditions) common in containerized environments.
+*   Running a separate, manual benchmark test.
 
-**1. Docker Engine and Docker Compose (REQUIRED BEFORE RUNNING SCRIPT):**
-Ensure Docker Engine and Docker Compose are installed on your host machine.
-**Refer to `prerequisite.md` in the project root for detailed installation instructions.**
+This approach, while educational, was not automated, repeatable, or robust.
 
-```bash
-# Verify Docker installation (after following prerequisite.md instructions)
-docker run hello-world
-```
+## 2. Actual Implementation (`assignment5.sh`)
 
-**2. Python Packages:**
-Ensure `ab` (ApacheBench) is installed for benchmarking.
+The implementation transformed the manual checklist into a powerful, self-contained toolkit, `assignment5.sh`. This script automates the entire migration and management process, embodying infrastructure-as-code principles.
 
-```bash
-sudo apt-get update
-sudo apt-get install -y apache2-utils # Provides 'ab' command
-```
+The script provides the following commands:
+*   `sudo ./ass5.sh start`: Builds the Docker images and starts the entire application stack using Docker Compose.
+*   `sudo ./ass5.sh stop`: Stops and removes all containers, networks, and volumes defined in the Compose file.
+*   `sudo ./ass5.sh benchmark`: Runs a performance benchmark against the running Dockerized application.
+*   `sudo ./ass5.sh clean`: Deletes all script-generated files.
 
-**3. Running Environment:**
-*   **Important:** This assignment uses Docker's own networking. You should **stop any running services from Assignment 2 and tear down the network from Assignment 1 (or Assignment 4 Modified Setup)** before starting this assignment to avoid port conflicts.
-    *   `sudo ./assignment2.sh stop`
-    *   `sudo ./assignment1.sh cleanup`
-    *   If you ran the `modified_setup` from Assignment 4:
-        *   `sudo ./ass4/modified_setup/assignment4-services.sh stop`
-        *   `sudo ./ass4/modified_setup/assignment4-network.sh cleanup`
+## 3. Key Changes and Justifications
 
----
+The final implementation is vastly superior to the original plan, focusing on automation, resilience, and user experience.
 
-## Task 5.1: Containerize All Services
+| Feature                 | Original Plan                                                                | Actual Implementation (`assignment5.sh`)                                                                                                                                                                                            | Justification                                                                                                                                                                                                                             |
+| ----------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Setup & Dependencies**| Manual installation of all prerequisites.                                    | **Fully automated**. The script attempts to install Docker, Docker Compose, and `apache2-utils` (`ab`) if they are missing. It even adds the user to the `docker` group and prompts for a shell restart. | This dramatically improves the user experience and reduces setup friction. It addresses the most common and frustrating setup issues that users encounter with Docker.                                                              |
+| **File Management**     | Manual creation of multiple `Dockerfile`s and a `docker-compose.yml`.        | **All files are generated dynamically**. The script creates all `Dockerfile`s, the `docker-compose.yml`, `nginx.conf`, and even the Python application source files on the fly.                                         | This makes the entire migration process self-contained and perfectly reproducible. There are no external file dependencies, which eliminates a major source of potential errors.                                                        |
+| **Startup Reliability** | No strategy for handling dependency startup order (race conditions).           | **Two layers of defense against race conditions**: <br> 1. **Docker Healthchecks**: The `docker-compose.yml` uses detailed `healthcheck` instructions for every service. <br> 2. **`depends_on` with `service_healthy`**: Containers wait for their dependencies to be healthy before starting. | This is a critical feature for production-like stability. It guarantees that the database and cache are ready before the application services attempt to connect to them, eliminating crashes on startup. |
+| **Application Code**    | Assumed code from previous assignments would be used as-is.                  | **More resilient application code**. The generated Python services include `wait_for_db()` and `wait_for_redis()` functions, providing an extra layer of robustness inside the application itself.        | This "belt-and-suspenders" approach (application-level waits + orchestrator-level healthchecks) ensures the system is exceptionally stable and resilient to timing issues during startup.                                                      |
+| **Orchestration**       | A basic `docker-compose.yml`.                                                | A production-ready `docker-compose.yml` that defines networks, volumes, environment variables, health checks, and service dependencies in a single, declarative file.                                     | This leverages the full power of Docker Compose to create a well-structured, maintainable, and observable application stack. Docker's internal DNS allows services to communicate using their names (e.g., `http://product-service:5000`). |
 
-Each service in our microservices architecture will be containerized using a `Dockerfile`. This defines the environment and dependencies for each service.
+## 4. Final Dockerized Architecture
 
-**1. `Dockerfile.nginx-lb`**
+The `assignment5.sh` script deploys the exact same logical architecture as the segmented network from Assignment 4, but uses Docker's native networking and orchestration instead of manual bridge and namespace creation.
 
-```dockerfile
-FROM nginx:alpine
+*   **Services**: Each service runs in its own container.
+*   **Networking**: Four separate `bridge` networks (`frontend_net`, `backend_net`, `cache_net`, `database_net`) provide the same network segmentation and security.
+*   **Service Discovery**: Docker's built-in DNS allows containers to discover and communicate with each other using their service names (e.g., `redis-cache`, `postgres-db`).
+*   **Data Persistence**: A named volume (`postgres_data`) is used to ensure that PostgreSQL data survives container restarts.
 
-WORKDIR /etc/nginx/conf.d
-
-# Copy the custom nginx.conf
-COPY nginx.conf /etc/nginx/nginx.conf
-
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
-```
-
-**2. `Dockerfile.api-gateway`**
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy the application code
-COPY api-gateway.py .
-
-EXPOSE 3000
-
-CMD ["python", "api-gateway.py"]
-```
-*Note: You would need to create a `requirements.txt` file containing `Flask`, `requests`.*
-
-**3. `Dockerfile.product-service`**
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy the application code
-COPY product-service.py .
-
-EXPOSE 5000
-
-CMD ["python", "product-service.py"]
-```
-*Note: You would need to create a `requirements.txt` file containing `Flask`, `redis`.*
-
-**4. `Dockerfile.order-service`**
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy the application code
-COPY order-service.py .
-
-EXPOSE 5000
-
-CMD ["python", "order-service.py"]
-```
-*Note: You would need to create a `requirements.txt` file containing `Flask`, `psycopg2-binary`.*
-
----
-
-## Task 5.2: Docker Compose Setup
-
-Docker Compose allows us to define and run multi-container Docker applications. We will define all our services, their networks, and dependencies in a single `docker-compose.yml` file.
-
-**1. `docker-compose.yml`**
-
-```yaml
-version: '3.8'
-
-services:
-  nginx-lb:
-    build:
-      context: .
-      dockerfile: Dockerfile.nginx-lb
-    ports:
-      - "8080:80" # Map host port 8080 to container port 80
-    networks:
-      - frontend_net
-    depends_on:
-      - api-gateway
-
-  api-gateway:
-    build:
-      context: .
-      dockerfile: Dockerfile.api-gateway
-    networks:
-      - frontend_net
-      - backend_net
-    depends_on:
-      - product-service
-      - order-service
-
-  product-service:
-    build:
-      context: .
-      dockerfile: Dockerfile.product-service
-    networks:
-      - backend_net
-      - cache_net
-    depends_on:
-      - redis-cache
-    # Deploy multiple replicas for load balancing (e.g., 3 instances)
-    deploy:
-      replicas: 3
-    environment:
-      # Pass Redis host to product service
-      REDIS_HOST: redis-cache
-
-  order-service:
-    build:
-      context: .
-      dockerfile: Dockerfile.order-service
-    networks:
-      - backend_net
-      - database_net
-    depends_on:
-      - postgres-db
-    environment:
-      # Pass PostgreSQL connection details
-      DB_HOST: postgres-db
-      DB_NAME: orders
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-
-  redis-cache:
-    image: redis:alpine
-    networks:
-      - cache_net
-
-  postgres-db:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_DB: orders
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    volumes:
-      - postgres_data:/var/lib/postgresql/data # Persistent storage for DB
-    networks:
-      - database_net
-
-# Define custom networks for segmentation (similar to Linux bridge setup)
-networks:
-  frontend_net:
-    driver: bridge
-  backend_net:
-    driver: bridge
-  cache_net:
-    driver: bridge
-  database_net:
-    driver: bridge
-
-# Define named volumes for persistent data
-volumes:
-  postgres_data:
-```
-
----
-
-## Task 5.3: Performance Comparison
-
-Benchmark the Linux primitive implementation (from Assignment 2 or 4) against the new Docker Compose implementation.
-
-**1. Ensure the target application is running:**
-*   To benchmark the Linux primitive setup, ensure `sudo ./assignment2.sh start` (or `sudo ./ass4/modified_setup/assignment4-services.sh start`) is running, and the host's port 8080 is forwarded to the Nginx LB.
-*   To benchmark the Docker setup, ensure `docker compose up -d` is running.
-
-**2. Run the benchmark:**
-
-```bash
-# Example benchmark command for either setup
-ab -n 1000 -c 100 http://localhost:8080/api/products
-```
-
-**Deliverable:** A report comparing Requests Per Second (RPS) and latency between the two implementations.
-
----
-
-## Task 5.4: Optimize Docker Setup
-
-Optimizing your Docker setup can lead to smaller images, faster builds, and better runtime performance.
-
-**Optimization Techniques:**
-*   **Multi-stage builds**: Use multiple `FROM` instructions to separate build-time dependencies from runtime dependencies, resulting in smaller final images.
-*   **Minimize image size**:
-    *   Use smaller base images (e.g., `alpine` variants).
-    *   Clean up cache and temporary files after installation (`RUN rm -rf /var/cache/apk/*`).
-    *   Combine `RUN` commands to reduce layers.
-*   **Leverage build cache**: Order instructions from least to most frequently changing.
-*   **Health checks**: Add `HEALTHCHECK` instructions to `Dockerfiles` so orchestrators (like Docker Compose) can monitor container health.
-*   **Resource limits**: Define `deploy: resources:` in `docker-compose.yml` to limit CPU/memory usage.
-
-**Deliverable:** Optimized Dockerfiles and `docker-compose.yml` with documentation of changes and their benefits.
+<!-- Image Placeholder: Docker Architecture Diagram -->
+<!-- Image Placeholder: Output of `docker compose up` -->
+<!-- Image Placeholder: Output of Benchmark Comparison -->

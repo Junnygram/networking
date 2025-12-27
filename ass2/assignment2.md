@@ -1,330 +1,59 @@
+# Assignment 2: Application Services Deployment
 
+This document describes the deployment of the microservices into the network infrastructure created in Assignment 1. It compares the original plan with the significantly more robust, automated implementation.
 
-# 📝 Assignment 2: Microservices Setup in Network Namespaces
+## 1. Original Plan
 
----
+The original plan for Day 2 involved manually deploying each service into its respective network namespace. This included:
 
-## **Step 0: Ensure Network Namespaces Are Up**
+*   Creating configuration and source code files manually.
+*   Running each service as a background process using `ip netns exec ... &`.
+*   Assuming all host dependencies (like `nginx`, `python`, `pip`, `redis`, `postgres`) were pre-installed.
+*   Hardcoding IP addresses directly into the application source code.
+*   Lacking a clear strategy for managing the lifecycle (start, stop, status) of the services.
+*   Providing an incomplete and "complex" path for setting up the PostgreSQL database.
 
-Make sure your namespaces from Assignment 1 exist and can ping each other.
+This manual approach was fragile, not easily repeatable, and prone to race conditions and configuration errors.
 
-```bash
-ip netns list
-# Should show: nginx-lb, api-gateway, product-service, order-service, redis-cache, postgres-db
+## 2. Actual Implementation
 
-# Test connectivity
-sudo ip netns exec product-service ping -c 2 10.0.0.60   # product-service → postgres-db
-sudo ip netns exec redis-cache ping -c 2 10.0.0.10       # redis-cache → nginx-lb
-```
+The actual implementation, `assignment2.sh`, is a comprehensive, idempotent management script that automates the entire lifecycle of the application environment. This represents a major evolution from a manual checklist to an infrastructure-as-code-like approach.
 
-Also, make sure DNS works for internet if needed (optional):
+The script provides the following commands:
+*   `sudo ./assignment2.sh start`: Starts all services, ensuring a clean state.
+*   `sudo ./assignment2.sh stop`: Stops all running service processes.
+*   `sudo ./assignment2.sh restart`: Restarts all services.
+*   `sudo ./assignment2.sh status`: Shows the status of all running processes.
+*   `sudo ./assignment2.sh clean`: Removes all generated files and the Python virtual environment.
 
-```bash
-sudo ip netns exec product-service ping -c 2 google.com
-```
+<!-- Image Placeholder: Architecture Diagram of Deployed Services -->
 
----
+## 3. Key Changes and Justifications
 
-## **Step 1: Deploy Nginx Load Balancer**
+The implementation introduced critical improvements over the original plan.
 
-1. Create configuration directory inside `nginx-lb` namespace:
+| Feature                      | Original Plan                                      | Actual Implementation                                                                                                                                                            | Justification                                                                                                                                                                       |
+| ---------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Deployment Strategy**      | Manual, one-by-one commands.                       | A single, automated, and idempotent script (`assignment2.sh`).                                                                                                                   | Automation ensures reliability, consistency, and ease of use. It transforms a manual process into a manageable, repeatable environment.                                           |
+| **Dependency Management**    | Ignored (assumed to be pre-installed).             | Automatically installs system packages (`nginx`, `redis`, `postgresql`) via `apt-get` and manages Python packages in a dedicated virtual environment (`networking_venv`).        | This makes the project self-contained and portable. It's a best practice that avoids polluting the host system and ensures the correct package versions are used.                  |
+| **Service Startup & Reliability** | Simple background processes (`&`).              | Robust startup logic that includes stopping old processes, waiting for dependencies (e.g., Redis), and redirecting output to log files for debugging.                              | This prevents common failures, such as services crashing because a database or cache isn't ready yet (a race condition), and makes the system significantly more stable.             |
+| **PostgreSQL Setup**         | Vague and incomplete ("this is complex").          | Fully automated setup that configures PostgreSQL to accept network connections, updates the authentication rules (`pg_hba.conf`), and creates the `orders` database. | The script provides a complete, working solution for the database, which was a major gap in the original plan.                                                                    |
+| **Configuration**            | Hardcoded IPs in source files.                     | Source and configuration files are generated by the script. Service URLs are sourced from environment variables, providing better flexibility.                               | This is a step towards the "Twelve-Factor App" methodology, where configuration is separated from code. It makes the services more adaptable to different environments.            |
+| **Lifecycle Management**     | No commands to stop, restart, or check status.     | Clear `start`, `stop`, `restart`, `status`, and `clean` commands.                                                                                                                | This provides full control over the application stack, which is essential for development, testing, and operation.                                                                  |
 
-```bash
-sudo ip netns exec nginx-lb mkdir -p /tmp/nginx
-```
+## 4. Implemented Service Architecture
 
-2. Create `/tmp/nginx/nginx.conf` with **upstream pointing to API Gateway** (`10.0.0.20:3000`):
+The script deploys the following services into their respective namespaces:
 
-```nginx
-events {
-    worker_connections 1024;
-}
+*   **`nginx-lb`**: An Nginx instance acts as a reverse proxy and load balancer, forwarding external traffic to the API Gateway.
+*   **`api-gateway`**: A Flask application that serves as the single entry point for all API requests, routing them to the appropriate backend service.
+*   **`product-service`**: A Flask application that manages product data and interacts with the Redis cache.
+*   **`order-service`**: A Flask application that manages orders and interacts with the PostgreSQL database.
+*   **`redis-cache`**: A Redis server for caching product data.
+*   **`postgres-db`**: A PostgreSQL server for storing order data.
 
-http {
-    upstream api_gateway {
-        server 10.0.0.20:3000;
-    }
+The script ensures that these services are started in the correct order and can communicate with each other over the virtual network.
 
-    server {
-        listen 80;
-
-        location / {
-            proxy_pass http://api_gateway;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-        }
-
-        location /health {
-            return 200 "OK\n";
-            add_header Content-Type text/plain;
-        }
-    }
-}
-```
-
-3. Start nginx inside the namespace:
-
-```bash
-sudo ip netns exec nginx-lb nginx -c /tmp/nginx/nginx.conf
-```
-
-✅ **Test:**
-
-```bash
-sudo ip netns exec nginx-lb curl http://10.0.0.10/health
-# Should return "OK"
-```
-
-> If nginx is complicated to run inside namespace, you can **simulate with Python http.server** and a basic proxy.
-
----
-
-## **Step 2: API Gateway**
-
-1. Create `api-gateway.py` inside host, then run it in namespace `api-gateway`:
-
-```python
-# api-gateway.py
-from flask import Flask, jsonify, request
-import requests
-
-app = Flask(__name__)
-
-PRODUCT_SERVICE = "http://10.0.0.30:5000"
-ORDER_SERVICE = "http://10.0.0.40:5000"
-
-@app.route('/health')
-def health():
-    return jsonify({"status": "healthy", "service": "api-gateway"})
-
-@app.route('/api/products', methods=['GET'])
-def get_products():
-    try:
-        response = requests.get(f"{PRODUCT_SERVICE}/products")
-        return jsonify(response.json()), response.status_code
-    except Exception as e:
-        return jsonify({"error": str(e)}), 503
-
-@app.route('/api/products/<id>', methods=['GET'])
-def get_product(id):
-    try:
-        response = requests.get(f"{PRODUCT_SERVICE}/products/{id}")
-        return jsonify(response.json()), response.status_code
-    except Exception as e:
-        return jsonify({"error": str(e)}), 503
-
-@app.route('/api/orders', methods=['POST'])
-def create_order():
-    try:
-        response = requests.post(f"{ORDER_SERVICE}/orders", json=request.json)
-        return jsonify(response.json()), response.status_code
-    except Exception as e:
-        return jsonify({"error": str(e)}), 503
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=3000)
-```
-
-2. Run inside namespace:
-
-```bash
-sudo ip netns exec api-gateway python3 api-gateway.py &
-```
-
-✅ **Test:**
-
-```bash
-sudo ip netns exec api-gateway curl http://10.0.0.20/health
-# Should return JSON status healthy
-```
-
----
-
-## **Step 3: Product Service**
-
-1. Create `product-service.py`:
-
-```python
-from flask import Flask, jsonify
-import redis, json
-
-app = Flask(__name__)
-cache = redis.Redis(host='10.0.0.50', port=6379, decode_responses=True)
-
-PRODUCTS = {
-    "1": {"id": "1", "name": "Laptop", "price": 999.99, "stock": 50},
-    "2": {"id": "2", "name": "Mouse", "price": 29.99, "stock": 200},
-    "3": {"id": "3", "name": "Keyboard", "price": 79.99, "stock": 150},
-}
-
-@app.route('/health')
-def health():
-    return jsonify({"status": "healthy", "service": "product-service"})
-
-@app.route('/products', methods=['GET'])
-def get_products():
-    if cache:
-        cached = cache.get('all_products')
-        if cached:
-            return jsonify(json.loads(cached))
-    products = list(PRODUCTS.values())
-    if cache:
-        cache.setex('all_products', 300, json.dumps(products))
-    return jsonify(products)
-
-@app.route('/products/<product_id>', methods=['GET'])
-def get_product(product_id):
-    if cache:
-        cached = cache.get(f'product_{product_id}')
-        if cached:
-            return jsonify(json.loads(cached))
-    product = PRODUCTS.get(product_id)
-    if not product:
-        return jsonify({"error": "Product not found"}), 404
-    if cache:
-        cache.setex(f'product_{product_id}', 300, json.dumps(product))
-    return jsonify(product)
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
-```
-
-2. Run inside namespace:
-
-```bash
-sudo ip netns exec product-service python3 product-service.py &
-```
-
-✅ **Test:**
-
-```bash
-sudo ip netns exec product-service curl http://10.0.0.30/products
-```
-
----
-
-## **Step 4: Order Service**
-
-1. Create `order-service.py`:
-
-```python
-from flask import Flask, jsonify, request
-import psycopg2
-
-app = Flask(__name__)
-
-def get_db():
-    return psycopg2.connect(
-        host='10.0.0.60', database='orders',
-        user='postgres', password='postgres'
-    )
-
-def init_db():
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS orders (
-            id SERIAL PRIMARY KEY,
-            customer_id VARCHAR(100),
-            product_id VARCHAR(100),
-            quantity INTEGER,
-            total_price DECIMAL(10, 2),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.commit()
-    cur.close()
-    conn.close()
-
-@app.route('/health')
-def health():
-    return jsonify({"status": "healthy", "service": "order-service"})
-
-@app.route('/orders', methods=['POST'])
-def create_order():
-    data = request.json
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        '''INSERT INTO orders (customer_id, product_id, quantity, total_price)
-           VALUES (%s, %s, %s, %s) RETURNING id''',
-        (data['customer_id'], data['product_id'], data['quantity'], data['total_price'])
-    )
-    order_id = cur.fetchone()[0]
-    conn.commit()
-    cur.close()
-    conn.close()
-    return jsonify({"order_id": order_id, "status": "created"}), 201
-
-if __name__ == '__main__':
-    init_db()
-    app.run(host='0.0.0.0', port=5000)
-```
-
-2. Run inside namespace:
-
-```bash
-sudo ip netns exec order-service python3 order-service.py &
-```
-
-✅ **Test:**
-
-```bash
-sudo ip netns exec order-service curl -X POST http://10.0.0.40/orders \
-  -H "Content-Type: application/json" \
-  -d '{"customer_id": "1", "product_id": "1", "quantity": 1, "total_price": 999.99}'
-```
-
----
-
-## **Step 5: Deploy Redis and PostgreSQL**
-
-1. Redis:
-
-```bash
-sudo ip netns exec redis-cache redis-server --bind 0.0.0.0 &
-```
-
-✅ **Test Redis connectivity:**
-
-```bash
-sudo ip netns exec product-service redis-cli -h 10.0.0.50 ping
-# Should return PONG
-```
-
-2. PostgreSQL (simplified, otherwise use Docker):
-
-```bash
-sudo ip netns exec postgres-db postgres -D /var/lib/postgresql/data &
-```
-
-✅ **Test PostgreSQL connectivity:**
-
-```bash
-sudo ip netns exec order-service psql -h 10.0.0.60 -U postgres -d orders -c '\dt'
-```
-
----
-
-## **Step 6: Test Full Flow**
-
-1. Check Product Service through API Gateway:
-
-```bash
-sudo ip netns exec nginx-lb curl http://10.0.0.10/api/products
-```
-
-2. Create an order:
-
-```bash
-sudo ip netns exec nginx-lb curl -X POST http://10.0.0.10/api/orders \
-  -H "Content-Type: application/json" \
-  -d '{"customer_id":"1","product_id":"1","quantity":1,"total_price":999.99}'
-```
-
-✅ **If successful:**
-
-* Nginx LB → API Gateway → Product / Order services → Redis / Postgres
-
----
-
+<!-- Image Placeholder: Output of 'assignment2.sh start' command -->
+<!-- Image Placeholder: Output of 'assignment2.sh status' command -->
+<!-- Image Placeholder: Successful API request to the running services -->
