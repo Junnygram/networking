@@ -84,6 +84,11 @@ jobs:
           name: ec2-instance-ip
           path: ./bonus/5-cicd-pipeline/terraform/instance_public_ip.txt
 
+      - name: Show Terraform Outputs
+        id: outputs
+        if: github.event.inputs.action == 'apply'
+        run: terraform output
+
       - name: Terraform Destroy
         id: destroy
         # The destroy action is only run when 'destroy' is selected.
