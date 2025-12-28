@@ -42,18 +42,31 @@ jobs:
       - name: Find changed services
         id: changed-services
         run: |
-          # Get the list of changed directories within the services path
-          # This compares the latest commit with the one before it.
-          CHANGED_DIRS=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep "${{ env.SERVICES_BASE_PATH }}" | awk -F/ '{print $3}' | sort -u)
+          # Get the list of all files that have changed.
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+          echo "All changed files:"
+          echo "$CHANGED_FILES"
+
+          # Determine the unique directories that contain buildable services.
+          CHANGED_SERVICE_DIRS=$(echo "$CHANGED_FILES" | grep "${{ env.SERVICES_BASE_PATH }}" | awk -F/ '{print $1"/"$2"/"$3}' | sort -u)
           
-          if [ -z "$CHANGED_DIRS" ]; then
-            echo "No changes detected in microservices. Nothing to build."
+          BUILDABLE_SERVICES=""
+          for DIR in $CHANGED_SERVICE_DIRS; do
+            # Check if a Dockerfile exists in the directory.
+            if [ -f "$DIR/Dockerfile" ]; then
+              # Extract just the service name (the last part of the path).
+              SERVICE_NAME=$(basename "$DIR")
+              BUILDABLE_SERVICES="$BUILDABLE_SERVICES $SERVICE_NAME"
+            fi
+          done
+
+          if [ -z "$BUILDABLE_SERVICES" ]; then
+            echo "No changes detected in buildable microservices. Nothing to build."
             echo "changed=false" >> $GITHUB_OUTPUT
           else
-            echo "Changes detected in the following services:"
-            echo "$CHANGED_DIRS"
-            # Convert the list of directories to a JSON array for the next step
-            JSON_ARRAY=$(echo "$CHANGED_DIRS" | jq -R . | jq -s .)
+            # Remove leading space and convert to JSON array.
+            JSON_ARRAY=$(echo "$BUILDABLE_SERVICES" | sed 's/^ *//' | tr ' ' '\n' | jq -R . | jq -s .)
+            echo "Services to build: $JSON_ARRAY"
             echo "changed=true" >> $GITHUB_OUTPUT
             echo "services=${JSON_ARRAY}" >> $GITHUB_OUTPUT
           fi
