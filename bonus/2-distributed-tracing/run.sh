@@ -17,11 +17,11 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_EXPORTER_OTLP_ENDPOINT=jaeger:4317
       - OTEL_SERVICE_NAME=my-flask-app
 
   jaeger:
-    image: jaegertracing/all-in-one:1.28
+    image: jaegertracing/all-in-one:latest
     ports:
       - "16686:16686"
       - "4317:4317"
@@ -88,6 +88,7 @@ cat <<EOF
 FROM python:3.9-slim
 WORKDIR /app
 COPY requirements.txt .
+RUN apt-get update && apt-get install -y iputils-ping
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
 CMD ["python", "app.py"]
