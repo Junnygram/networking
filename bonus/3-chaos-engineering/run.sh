@@ -77,15 +77,10 @@ stop_services() {
 add_latency() {
     check_deps
     LATENCY=$1
-    if [ -z "$LATENCY" ]; then
-      echo "Usage: ./run.sh latency <latency>"
-      echo "Example: ./run.sh latency 200ms"
-      exit 1
-    fi
-    
+
     SERVICE_NAME="web"
-    COMPOSE_PROJECT_NAME=$(basename "$PWD")
-    CONTAINERS=($(docker ps -q --filter "name=${COMPOSE_PROJECT_NAME}_${SERVICE_NAME}"))
+    CONTAINERS=($(docker-compose ps -q ${SERVICE_NAME}))
+
     if [ ${#CONTAINERS[@]} -eq 0 ]; then
         echo "No containers found for service '$SERVICE_NAME'"
         exit 1
@@ -96,16 +91,20 @@ add_latency() {
     TARGET_CONTAINER_SHORT_ID=$(echo $TARGET_CONTAINER | cut -c 1-12)
 
     echo "Selected container '$TARGET_CONTAINER_SHORT_ID' to add latency of $LATENCY."
-    docker exec $TARGET_CONTAINER tc qdisc add dev eth0 root netem delay $LATENCY 2>/dev/null || \
-    docker exec $TARGET_CONTAINER tc qdisc change dev eth0 root netem delay $LATENCY
+
+    echo "Installing 'iproute2' in container to provide 'tc'..."
+    docker exec --privileged $TARGET_CONTAINER apt-get update >/dev/null
+    docker exec --privileged $TARGET_CONTAINER apt-get install -y iproute2 >/dev/null
+
+    docker exec --privileged $TARGET_CONTAINER tc qdisc add dev eth0 root netem delay $LATENCY 2>/dev/null || \
+    docker exec --privileged $TARGET_CONTAINER tc qdisc change dev eth0 root netem delay $LATENCY
     echo "Latency of $LATENCY added to container '$TARGET_CONTAINER_SHORT_ID'."
 }
 
 kill_container() {
     check_deps
     SERVICE_NAME="web"
-    COMPOSE_PROJECT_NAME=$(basename "$PWD")
-    CONTAINERS=($(docker ps -q --filter "name=${COMPOSE_PROJECT_NAME}_${SERVICE_NAME}"))
+    CONTAINERS=($(docker-compose ps -q ${SERVICE_NAME}))
     if [ ${#CONTAINERS[@]} -eq 0 ]; then
         echo "No containers found for service '$SERVICE_NAME'"
         exit 1
