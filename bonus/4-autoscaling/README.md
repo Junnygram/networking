@@ -71,3 +71,8 @@ docker swarm leave --force
 - **Metrics Monitoring:** Scraping metrics (like CPU usage) from running containers.
 - **Declarative Control Loop:** The script acts as a simple control loop, comparing the desired state (CPU below a threshold) with the actual state and taking action to reconcile it.
 - **Orchestrator Integration:** Using orchestrator commands (`docker service scale`) to dynamically adjust the application's topology.
+
+
+
+
+![Latency](images/autoscaler.png)

@@ -67,3 +67,6 @@ docker-compose down
 - **System Resilience:** Testing if your application can handle degraded network conditions or unexpected instance termination.
 - **Self-Healing:** Observing how a container orchestrator (like Docker Swarm in this case) automatically recovers from failure by restarting terminated containers.
 - **Targeted Failure Injection:** Using tools like `tc` and `docker kill` to precisely inject specific types of failures.
+
+
+![Latency](images/latency.png)

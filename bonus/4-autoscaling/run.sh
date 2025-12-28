@@ -11,7 +11,7 @@ cat <<EOF
 version: '3.7'
 services:
   cpu-eater:
-    image: ltslearn/stress
+    image: polinux/stress
     command: ["sleep", "infinity"]
     deploy:
       replicas: 1
@@ -107,14 +107,18 @@ run_scaler() {
           continue
         fi
         
-        CPU_STATS=$(docker stats --no-stream --format "{{.CPUPerc}}" "name=${SERVICE_NAME}")
+        # Get container IDs for the running service
+        CONTAINER_IDS=$(docker ps -q --filter "label=com.docker.swarm.service.name=${SERVICE_NAME}")
         
-        if [ -z "$CPU_STATS" ]; then
+        if [ -z "$CONTAINER_IDS" ]; then
             echo "[$(date +%T)] No running containers found. Scaling down to min replicas."
             docker service scale ${SERVICE_NAME}=${MIN_REPLICAS}
             sleep $CHECK_INTERVAL
             continue
         fi
+
+        # Get stats for all containers of the service
+        CPU_STATS=$(docker stats --no-stream --format "{{.CPUPerc}}" $CONTAINER_IDS)
 
         TOTAL_CPU=0; COUNT=0
         for CPU in $CPU_STATS; do
