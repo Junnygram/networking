@@ -1,0 +1,96 @@
+# This workflow manages AWS infrastructure using Terraform.
+# It can be triggered manually to either 'apply' or 'destroy' the infrastructure.
+
+name: 'Infrastructure Management (Terraform)'
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Select Terraform action (apply or destroy)'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+          - apply
+          - destroy
+
+# Environment variables available to all jobs
+env:
+  AWS_REGION: 'us-east-1' # Change if you use a different region
+  TF_STATE_BUCKET: ${{ secrets.S3_BUCKET_NAME }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  
+jobs:
+  terraform:
+    name: 'Terraform Workflow'
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        shell: bash
+        # The working directory is set to where the Terraform files are located.
+        working-directory: ./bonus/5-cicd-pipeline/terraform
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.0 # Pinned to a stable version
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        id: init
+        run: terraform init -backend-config="bucket=${{ env.TF_STATE_BUCKET }}"
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        # The plan is only generated for the 'apply' action.
+        if: github.event.inputs.action == 'apply'
+        run: terraform plan -no-color -input=false -out=tfplan
+      
+      - name: Terraform Apply
+        id: apply
+        if: github.event.inputs.action == 'apply'
+        run: terraform apply -auto-approve -input=false tfplan
+
+      - name: Save Instance IP for Deployment
+        id: save-ip
+        if: github.event.inputs.action == 'apply'
+        run: |
+          # Extract the IP address from Terraform output and save it to an artifact.
+          # This artifact will be used by the deployment workflow.
+          terraform output -raw instance_public_ip > instance_public_ip.txt
+          echo "EC2_PUBLIC_IP=$(cat instance_public_ip.txt)" >> $GITHUB_ENV
+
+      - name: Upload Instance IP Artifact
+        if: github.event.inputs.action == 'apply'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ec2-instance-ip
+          path: ./bonus/5-cicd-pipeline/terraform/instance_public_ip.txt
+
+      - name: Show Terraform Outputs
+        id: outputs
+        if: github.event.inputs.action == 'apply'
+        run: terraform output
+
+      - name: Terraform Destroy
+        id: destroy
+        # The destroy action is only run when 'destroy' is selected.
+        if: github.event.inputs.action == 'destroy'
+        run: terraform destroy -auto-approve -input=false

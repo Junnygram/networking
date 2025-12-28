@@ -1,0 +1,22 @@
+version: '3.7'
+
+services:
+  frontend-app:
+    # The image will be pulled from a container registry.
+    # Replace 'your-dockerhub-username' with your actual Docker Hub username.
+    image: frontend-app:latest
+    ports:
+      - "80:8080" # Map host port 80 to container port 8080
+    networks:
+      - app-network
+
+  backend-service:
+    # The image will be pulled from a container registry.
+    # Replace 'your-dockerhub-username' with your actual Docker Hub username.
+    image: backend-service:latest
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
