@@ -23,27 +23,50 @@ EOF
 
 # --- Functions ---
 
+check_deps() {
+    if ! command -v docker &> /dev/null || ! command -v docker-compose &> /dev/null; then
+        echo "Error: Docker or Docker Compose not found."
+        echo "Please run './run.sh install' first."
+        exit 1
+    fi
+    if ! command -v bc &> /dev/null; then
+        echo "Error: 'bc' (basic calculator) is not installed."
+        echo "Please run './run.sh install' first."
+        exit 1
+    fi
+}
+
 install_deps() {
-    echo "--- Installing Docker and Docker Compose (if not present) ---"
+    echo "--- Updating package list and installing dependencies ---"
+    sudo apt-get update -y
+    sudo apt-get install -y curl bc
+
+    echo "--- Installing Docker ---"
     if ! command -v docker &> /dev/null; then
-        sudo apt-get update -y && sudo apt-get install -y curl bc
         curl -fsSL https://get.docker.com -o get-docker.sh
         sudo sh get-docker.sh
         sudo usermod -aG docker $USER
-        echo "Docker installed. Please log out and log back in."
+        echo "Docker installed. Please log out and log back in for group changes to take effect, or run 'newgrp docker'."
     else
-        # ensure bc is installed
-        sudo apt-get update -y && sudo apt-get install -y bc
+        echo "Docker is already installed."
     fi
+
+    echo "--- Installing Docker Compose ---"
     if ! command -v docker-compose &> /dev/null; then
-        COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d" -f4)
+        COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d\" -f4)
         sudo curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
         sudo chmod +x /usr/local/bin/docker-compose
+        echo "Docker Compose ${COMPOSE_VERSION} installed."
+    else
+        echo "Docker Compose is already installed."
     fi
-    echo "--- Dependencies are installed. ---"
+    
+    echo "--- Installation complete! ---"
+    echo "IMPORTANT: You may need to log out and log back in to use 'docker' without 'sudo'."
 }
 
 start_services() {
+    check_deps
     echo "--- Initializing Docker Swarm (if not active) ---"
     docker info | grep -q "Swarm: active" || docker swarm init
     
@@ -56,6 +79,7 @@ start_services() {
 }
 
 stop_services() {
+    check_deps
     echo "--- Removing stack 'cpu-scaler' ---"
     docker stack rm cpu-scaler
     echo "--- Leaving Swarm mode ---"
@@ -66,6 +90,7 @@ stop_services() {
 }
 
 run_scaler() {
+    check_deps
     SERVICE_NAME="cpu-scaler_cpu-eater"
     SCALE_UP_THRESHOLD=50
     SCALE_DOWN_THRESHOLD=10
