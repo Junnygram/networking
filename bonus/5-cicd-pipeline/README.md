@@ -28,7 +28,7 @@ Before running the workflows, you must create the following secrets in your GitH
 *   `AWS_ACCESS_KEY_ID`: Your AWS access key ID. This user needs permissions to manage EC2, S3 (for Terraform state), and ECR.
 *   `AWS_SECRET_ACCESS_KEY`: Your AWS secret access key.
 *   `S3_BUCKET_NAME`: The name of an S3 bucket you own. Terraform will use it to store its state file. **You must create this S3 bucket manually in your AWS account beforehand.**
-*   `SSH_PRIVATE_KEY`: The private SSH key that corresponds to a public key in your EC2 Key Pairs. The default key name is `deployer-key` (see `terraform/variables.tf`).
+*   `SSH_PRIVATE_KEY`: The private SSH key that corresponds to a public key in your EC2 Key Pairs. The default key name is `tech4dev` (see `terraform/variables.tf`).
 
 ### 2. No Manual Docker Compose File Update Needed
 

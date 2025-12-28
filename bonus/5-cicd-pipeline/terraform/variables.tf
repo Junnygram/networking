@@ -19,5 +19,5 @@ variable "ami_id" {
 variable "key_name" {
   description = "Name of the EC2 key pair to use. Ensure this key exists in the specified AWS region."
   type        = string
-  default     = "deployer-key"
+  default     = "tech4dev"
 }
