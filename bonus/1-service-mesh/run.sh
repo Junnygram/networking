@@ -83,15 +83,23 @@ EOF
 
 # --- Functions ---
 
+check_deps() {
+    if ! command -v docker &> /dev/null || ! command -v docker-compose &> /dev/null; then
+        echo "Error: Docker or Docker Compose not found."
+        echo "Please run './run.sh install' first."
+        exit 1
+    fi
+}
+
 install_deps() {
-    echo "--- Updating package list ---"
+    echo "--- Updating package list and installing dependencies ---"
     sudo apt-get update -y
+    sudo apt-get install -y curl
 
     echo "--- Installing Docker ---"
     if ! command -v docker &> /dev/null; then
         curl -fsSL https://get.docker.com -o get-docker.sh
         sudo sh get-docker.sh
-        # Add the current user to the docker group to avoid using sudo
         sudo usermod -aG docker $USER
         echo "Docker installed. Please log out and log back in for group changes to take effect, or run 'newgrp docker'."
     else
@@ -100,8 +108,7 @@ install_deps() {
 
     echo "--- Installing Docker Compose ---"
     if ! command -v docker-compose &> /dev/null; then
-        # Get the latest version of docker-compose
-        COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d" -f4)
+        COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d\" -f4)
         sudo curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
         sudo chmod +x /usr/local/bin/docker-compose
         echo "Docker Compose ${COMPOSE_VERSION} installed."
@@ -114,6 +121,7 @@ install_deps() {
 }
 
 start_services() {
+    check_deps
     echo "--- Generating docker-compose.yml and envoy.yaml ---"
     generate_docker_compose_yml > docker-compose.yml
     generate_envoy_yaml > envoy.yaml
@@ -123,6 +131,7 @@ start_services() {
 }
 
 stop_services() {
+    check_deps
     echo "--- Stopping services ---"
     docker-compose down
     echo "--- Cleaning up generated configuration files ---"
@@ -131,6 +140,7 @@ stop_services() {
 }
 
 test_connection() {
+    check_deps
     echo "--- Testing connection from 'frontend' to 'backend' via Envoy ---"
     echo "Waiting for services to be ready..."
     sleep 5 
@@ -154,24 +164,10 @@ show_help() {
 CMD=${1:-up}
 
 case "$CMD" in
-    install)
-        install_deps
-        ;;
-    up)
-        start_services
-        ;;
-    down)
-        stop_services
-        ;;
-    test)
-        test_connection
-        ;;
-    help)
-        show_help
-        ;;
-    *)
-        echo "Error: Unknown command: $CMD"
-        show_help
-        exit 1
-        ;;
+    install) install_deps ;;
+    up) start_services ;;
+    down) stop_services ;;
+    test) test_connection ;;
+    help) show_help ;;
+    *) echo "Error: Unknown command: $CMD"; show_help; exit 1 ;;
 esac

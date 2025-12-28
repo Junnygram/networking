@@ -19,6 +19,14 @@ EOF
 
 # --- Functions ---
 
+check_deps() {
+    if ! command -v docker &> /dev/null || ! command -v docker-compose &> /dev/null; then
+        echo "Error: Docker or Docker Compose not found."
+        echo "Please run './run.sh install' first."
+        exit 1
+    fi
+}
+
 install_deps() {
     echo "--- Installing Docker and Docker Compose (if not present) ---"
     # Same install logic as other scripts...
@@ -38,6 +46,7 @@ install_deps() {
 }
 
 start_services() {
+    check_deps
     echo "--- Generating docker-compose.yml ---"
     generate_docker_compose_yml > docker-compose.yml
     echo "--- Starting service with 3 replicas ---"
@@ -46,6 +55,7 @@ start_services() {
 }
 
 stop_services() {
+    check_deps
     echo "--- Stopping services ---"
     docker-compose down -v
     echo "--- Cleaning up generated files ---"
@@ -54,6 +64,7 @@ stop_services() {
 }
 
 add_latency() {
+    check_deps
     LATENCY=$1
     if [ -z "$LATENCY" ]; then
       echo "Usage: ./run.sh latency <latency>"
@@ -80,6 +91,7 @@ add_latency() {
 }
 
 kill_container() {
+    check_deps
     SERVICE_NAME="web"
     COMPOSE_PROJECT_NAME=$(basename "$PWD")
     CONTAINERS=($(docker ps -q --filter "name=${COMPOSE_PROJECT_NAME}_${SERVICE_NAME}"))

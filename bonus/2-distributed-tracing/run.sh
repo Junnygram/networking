@@ -96,6 +96,14 @@ EOF
 
 # --- Functions ---
 
+check_deps() {
+    if ! command -v docker &> /dev/null || ! command -v docker-compose &> /dev/null; then
+        echo "Error: Docker or Docker Compose not found."
+        echo "Please run './run.sh install' first."
+        exit 1
+    fi
+}
+
 install_deps() {
     echo "--- Installing Docker and Docker Compose (if not present) ---"
     if ! command -v docker &> /dev/null; then
@@ -114,6 +122,7 @@ install_deps() {
 }
 
 start_services() {
+    check_deps
     echo "--- Generating config files ---"
     generate_docker_compose_yml > docker-compose.yml
     generate_app_py > app.py
@@ -125,6 +134,7 @@ start_services() {
 }
 
 stop_services() {
+    check_deps
     echo "--- Stopping services ---"
     docker-compose down -v
     echo "--- Cleaning up generated files ---"
@@ -133,6 +143,7 @@ stop_services() {
 }
 
 test_connection() {
+    check_deps
     echo "--- Generating traces ---"
     curl http://localhost:5000/
     curl http://localhost:5000/trace

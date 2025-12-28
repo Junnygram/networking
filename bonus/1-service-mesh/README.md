@@ -55,3 +55,11 @@ When you are finished, you can stop and remove all the services and networks.
 - **Centralized Proxy:** A single proxy manages traffic routing between other services.
 - **Service Discovery:** The Envoy proxy finds the `backend` service using Docker's internal DNS.
 - **Decoupling:** The `frontend` does not need to know the direct address or port of the `backend`; it only needs to know about the proxy. This makes it easier to change or replace backend services without reconfiguring the frontend.
+
+
+
+![Docker Start2](images/1.png)
+![Docker Start2](images/2.png)
+![Docker Start2](images/3.png)
+![Docker Start2](images/4.png)
+![Docker Start2](images/5.png)
