@@ -1,6 +1,0 @@
-version: '3.7'
-services:
-  web:
-    image: nginx:1.21
-    deploy:
-      replicas: 3

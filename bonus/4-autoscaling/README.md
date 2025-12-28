@@ -6,48 +6,51 @@ This directory contains a proof-of-concept script that simulates auto-scaling fo
 
 ## Components
 
-1.  **`docker-compose.yml`**: Defines a service called `cpu-eater`. This service uses an image that has the `stress` utility, which we can use to artificially generate CPU load.
+1.  **`run.sh`**: The main script that manages the entire auto-scaling demo. It dynamically generates the `docker-compose.yml` file and contains the logic for deploying the service and running the scaler.
 
-2.  **`simple-swarm-scaler.sh`**: This script continuously monitors the average CPU usage of the `cpu-eater` service.
-    - If the average CPU goes **above** a defined threshold, it scales the service up.
-    - If the average CPU goes **below** a defined threshold, it scales the service down.
+## How to Run (with `run.sh` script)
 
-## How to Run
+This directory includes a convenient script, `run.sh`, to automate setup and execution.
 
-1.  **Initialize Docker Swarm mode:**
-    This script uses `docker service` commands, which require Swarm mode to be enabled.
-    ```bash
-    docker swarm init
-    ```
+First, make the script executable:
+```bash
+chmod +x run.sh
+```
 
-2.  **Deploy the service:**
-    Deploy the `cpu-eater` stack. We'll start with 1 replica.
-    ```bash
-    docker stack deploy -c docker-compose.yml cpu-scaler
-    ```
+### 1. Install Dependencies (First time on a new server)
+This command will install Docker, Docker Compose, and `bc` (for calculations).
+```bash
+./run.sh install
+```
 
-3.  **Run the auto-scaler script:**
-    Make the script executable and run it.
-    ```bash
-    chmod +x simple-swarm-scaler.sh
-    ./simple-swarm-scaler.sh
-    ```
-    The script will now be watching the service in a loop.
+### 2. Deploy the Service
+This command will initialize Docker Swarm (if needed), generate the `docker-compose.yml`, and deploy the `cpu-scaler` stack.
+```bash
+./run.sh up
+```
 
-4.  **Generate CPU Load:**
-    Open another terminal. Find the container ID of the `cpu-eater` service.
-    ```bash
-    docker ps
-    ```
-    Now, use `docker exec` to run the `stress` command inside the container and generate load on 1 CPU core.
-    ```bash
-    docker exec <CONTAINER_ID> stress --cpu 1 --timeout 120s
-    ```
+### 3. Run the Auto-Scaler
+In a **separate terminal**, run the `scaler` command to start the monitoring loop.
+```bash
+./run.sh scaler
+```
 
-5.  **Observe the scaling:**
-    - Watch the output of the `simple-swarm-scaler.sh` script. When the CPU usage crosses the upper threshold, it will trigger a `docker service scale` command.
-    - You can also watch the number of replicas with `docker service ls`.
-    - After the `stress` command finishes (after 120 seconds), the CPU usage will drop. The scaler script will then detect this and scale the service back down.
+### 4. Generate CPU Load
+In a third terminal, find a container ID of the `cpu-eater` service (`docker ps`). Then, use `docker exec` to run the `stress` command inside the container.
+```bash
+# Example:
+docker exec <YOUR_CONTAINER_ID> stress --cpu 1 --timeout 120s
+```
+
+### 5. Observe the Scaling
+- Watch the output of the `./run.sh scaler` terminal. When the CPU usage crosses the threshold, it will scale the service up.
+- After the `stress` command finishes, the CPU usage will drop, and the scaler will eventually scale the service back down.
+
+### 6. Stop the Services
+This command will remove the stack, leave swarm mode, and clean up the generated `docker-compose.yml` file.
+```bash
+./run.sh down
+```
 
 ## Cleanup
 

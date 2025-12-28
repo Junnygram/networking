@@ -4,38 +4,51 @@ This directory contains scripts to perform basic chaos engineering experiments o
 
 ## Components
 
-1.  **`docker-compose.yml`**: A simple setup that runs a single `nginx` service scaled to 3 replicas. We will use this as the target for our chaos experiments.
+1.  **`run.sh`**: The main script to manage the chaos engineering demo. It dynamically generates the `docker-compose.yml` file and contains the logic for all chaos experiments.
 
-2.  **`introduce-latency.sh`**: This script uses `tc` (traffic control), a powerful Linux utility, to add a specified amount of latency to the network interface of a random container belonging to our `web` service.
+## How to Run (with `run.sh` script)
 
-3.  **`kill-container.sh`**: This script randomly selects one of the `web` service's containers and abruptly stops it using `docker kill`.
+This directory includes a convenient script, `run.sh`, to automate setup and execution.
 
-## How to Run
+First, make the script executable:
+```bash
+chmod +x run.sh
+```
 
-1.  **Start the target service:**
-    First, deploy the `web` service with 3 replicas.
-    ```bash
-    docker-compose up -d --scale web=3
-    ```
-    You can see the running containers with `docker-compose ps`.
+### 1. Install Dependencies (First time on a new server)
+This command will install Docker and Docker Compose if they are not present.
+```bash
+./run.sh install
+```
 
-2.  **Run a Chaos Experiment:**
+### 2. Start the Target Service
+This command will generate the `docker-compose.yml` and start the `web` service with 3 replicas.
+```bash
+./run.sh up
+```
 
-    **A) Introduce Latency:**
-    Make the script executable and run it. You need to provide the network delay you want to add (e.g., `200ms`).
-    ```bash
-    chmod +x introduce-latency.sh
-    ./introduce-latency.sh 200ms
-    ```
-    The script will pick a random container and add latency to it. If you run it again, it might pick a different container. You can verify the added latency by pinging the container.
+### 3. Run a Chaos Experiment
+You can now inject failures using the script's subcommands.
 
-    **B) Kill a Container:**
-    Make the script executable and run it.
-    ```bash
-    chmod +x kill-container.sh
-    ./kill-container.sh
-    ```
-    The script will randomly select and kill one of the `web` containers. Because we are running it as a Docker service, the orchestrator will automatically detect this and start a new container to replace it, demonstrating self-healing. You can observe this with `docker-compose ps`.
+**A) Introduce Latency:**
+Run the `latency` command with a delay value (e.g., `200ms`).
+```bash
+./run.sh latency 200ms
+```
+The script will pick a random container and add the specified latency to it.
+
+**B) Kill a Container:**
+Run the `kill` command.
+```bash
+./run.sh kill
+```
+The script will randomly select and kill one of the `web` containers. Docker's Swarm mode (enabled by `docker-compose`) will automatically start a new container to replace it, demonstrating self-healing.
+
+### 4. Stop the Services
+This command will stop the service and remove the generated `docker-compose.yml` file.
+```bash
+./run.sh down
+```
 
 ## Cleanup
 
