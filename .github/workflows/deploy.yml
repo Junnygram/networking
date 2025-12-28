@@ -98,9 +98,14 @@ jobs:
               "${{ env.SERVICES_BASE_PATH }}/${SERVICE}"
           done
 
-      - name: Download EC2 Instance IP
-        uses: actions/download-artifact@v4
+      - name: Download EC2 Instance IP from Infra Workflow
+        uses: dawidd6/action-download-artifact@v6
         with:
+          # Name of the workflow that produced the artifact.
+          # Must match the `name:` field in `infra.yml`.
+          workflow: infra.yml
+          # Get artifact from the latest successful run on the current branch.
+          workflow_conclusion: success
           name: ec2-instance-ip
           path: /tmp
 
