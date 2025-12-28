@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microservices App</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background-color: #f4f4f9; color: #333; display: grid; place-content: center; height: 100vh; text-align: center; margin: 0; }
+        .container { background: white; padding: 2rem 3rem; border-radius: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        button { font-size: 1rem; padding: 0.5rem 1rem; border-radius: 5px; border: 1px solid #ddd; cursor: pointer; background-color: #007bff; color: white; }
+        #message-box { margin-top: 1.5rem; padding: 1rem; background: #e9ecef; border-radius: 5px; min-height: 50px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Frontend Service</h1>
+        <p>Click the button to get a message from the backend service.</p>
+        <button id="fetch-btn">Get Message</button>
+        <div id="message-box">
+            <p id="message-text">...</p>
+        </div>
+    </div>
+    <script>
+        document.getElementById('fetch-btn').addEventListener('click', async () => {
+            const messageText = document.getElementById('message-text');
+            messageText.textContent = 'Loading...';
+            try {
+                const response = await fetch('/api/message');
+                const data = await response.json();
+                if (data.error) {
+                    messageText.textContent = `Error: ${data.error}`;
+                } else {
+                    messageText.textContent = `${data.message} (Received at: ${new Date(data.timestamp).toLocaleTimeString()})`;
+                }
+            } catch (error) {
+                messageText.textContent = 'Failed to fetch data.';
+            }
+        });
+    </script>
+</body>
+</html>
