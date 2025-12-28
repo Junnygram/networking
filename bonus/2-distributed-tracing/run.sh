@@ -18,6 +18,7 @@ services:
       - "5000:5000"
     environment:
       - OTEL_EXPORTER_OTLP_ENDPOINT=jaeger:4317
+      - OTEL_EXPORTER_OTLP_INSECURE=true
       - OTEL_SERVICE_NAME=my-flask-app
 
   jaeger:

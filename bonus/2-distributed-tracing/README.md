@@ -47,3 +47,9 @@ This will stop the services and remove all generated files.
 - **Trace Propagation:** OpenTelemetry automatically creates and propagates trace contexts across network requests (if we were calling other services).
 - **Trace Collection:** The Jaeger service acts as a collector for the trace data sent by the application.
 - **Trace Visualization:** The Jaeger UI provides a powerful way to search for and visualize the entire lifecycle of a request, making it invaluable for debugging distributed systems.
+
+
+![Docker Start2](images/jeagerui.png)
+![Docker Start2](images/service.png)
+![Docker Start2](images/trace.png)
+![Docker Start2](images/down.png)
