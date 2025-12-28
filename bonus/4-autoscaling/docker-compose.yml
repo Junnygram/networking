@@ -1,0 +1,14 @@
+version: '3.7'
+services:
+  cpu-eater:
+    image: ltslearn/stress
+    # The default command keeps the container running without load.
+    # We will use 'docker exec' to apply stress when we want to.
+    command: ["sleep", "infinity"]
+    deploy:
+      replicas: 1
+      # We need to define resource limits for CPU scaling to be meaningful.
+      # Here we are saying each container can use at most 50% of one CPU core.
+      resources:
+        limits:
+          cpus: '0.50'
