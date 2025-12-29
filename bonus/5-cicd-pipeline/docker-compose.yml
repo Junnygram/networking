@@ -1,22 +1,33 @@
 version: '3.7'
 
 services:
-  frontend-app:
-    # The image will be pulled from a container registry.
-    # Replace 'your-dockerhub-username' with your actual Docker Hub username.
-    image: frontend-app:latest
+  visualizer-ui:
+    image: ${VISUALIZER_UI_IMAGE_URI}
     ports:
-      - "80:8080" # Map host port 80 to container port 8080
+      - "80:8080" # Map host's port 80 to the UI's port 8080
     networks:
       - app-network
+    depends_on:
+      - network-api
 
-  backend-service:
-    # The image will be pulled from a container registry.
-    # Replace 'your-dockerhub-username' with your actual Docker Hub username.
-    image: backend-service:latest
+  network-api:
+    image: ${NETWORK_API_IMAGE_URI}
     networks:
       - app-network
+    depends_on:
+      - network-db
+
+  network-db:
+    image: redis:6-alpine
+    networks:
+      - app-network
+    volumes:
+      - redis-data:/data
 
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  redis-data:
+    driver: local

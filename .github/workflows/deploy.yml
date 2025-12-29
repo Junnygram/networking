@@ -13,7 +13,7 @@ on:
 
 env:
   # The path to your microservices directory
-  SERVICES_BASE_PATH: bonus/5-cicd-pipeline
+  SERVICES_BASE_PATH: bonus/5-cicd-pipeline/apps
   AWS_REGION: us-east-1 # Define AWS region for ECR operations
 
 jobs:
@@ -42,21 +42,26 @@ jobs:
       - name: Find changed services
         id: changed-services
         run: |
-          # Get the list of all files that have changed.
+          # Get the list of all files that have changed in this push.
+          # For a workflow_run or dispatch, you might need a different git diff command.
+          # This example is simplified for a push event.
           CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
           echo "All changed files:"
           echo "$CHANGED_FILES"
 
-          # Determine the unique directories that contain buildable services.
-          CHANGED_SERVICE_DIRS=$(echo "$CHANGED_FILES" | grep "${{ env.SERVICES_BASE_PATH }}" | awk -F/ '{print $1"/"$2"/"$3}' | sort -u)
+          # From the changed files, find the unique parent directories that are potential services
+          # and ensure they are inside the SERVICES_BASE_PATH.
+          POTENTIAL_DIRS=$(echo "$CHANGED_FILES" | xargs -I {} dirname {} | grep "${{ env.SERVICES_BASE_PATH }}" | sort -u)
           
           BUILDABLE_SERVICES=""
-          for DIR in $CHANGED_SERVICE_DIRS; do
-            # Check if a Dockerfile exists in the directory.
+          for DIR in $POTENTIAL_DIRS; do
+            # Check if a Dockerfile exists directly in the identified directory.
             if [ -f "$DIR/Dockerfile" ]; then
-              # Extract just the service name (the last part of the path).
               SERVICE_NAME=$(basename "$DIR")
-              BUILDABLE_SERVICES="$BUILDABLE_SERVICES $SERVICE_NAME"
+              # Add to list, ensuring no duplicates.
+              if [[ ! " $BUILDABLE_SERVICES " =~ " $SERVICE_NAME " ]]; then
+                BUILDABLE_SERVICES="$BUILDABLE_SERVICES $SERVICE_NAME"
+              fi
             fi
           done
 
@@ -70,6 +75,10 @@ jobs:
             echo "changed=true" >> $GITHUB_OUTPUT
             echo "services=${JSON_ARRAY}" >> $GITHUB_OUTPUT
           fi
+
+      - name: Get Git Commit SHA
+        id: get-sha
+        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Log in to AWS ECR
         if: steps.changed-services.outputs.changed == 'true'
@@ -88,12 +97,13 @@ jobs:
         run: |
           SERVICES='${{ steps.changed-services.outputs.services }}'
           ECR_REGISTRY="${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
-          echo "Building and pushing services to ECR: $SERVICES"
+          TAG="${{ env.GIT_SHA }}"
+          echo "Building and pushing services to ECR: $SERVICES with tag $TAG"
           for SERVICE in $(echo "$SERVICES" | jq -r '.[]'); do
-            ECR_IMAGE_URI="$ECR_REGISTRY/$SERVICE:latest"
-            echo "Building and pushing $ECR_IMAGE_URI..."
+            IMAGE_URI="$ECR_REGISTRY/$SERVICE:$TAG"
+            echo "Building and pushing $IMAGE_URI..."
             docker buildx build --push \
-              --tag "$ECR_IMAGE_URI" \
+              --tag "$IMAGE_URI" \
               --file "${{ env.SERVICES_BASE_PATH }}/${SERVICE}/Dockerfile" \
               "${{ env.SERVICES_BASE_PATH }}/${SERVICE}"
           done
@@ -121,16 +131,20 @@ jobs:
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Set the working directory
-            cd ${{ env.SERVICES_BASE_PATH }}
+            # Navigate to the project directory where docker-compose.yml is located
+            cd bonus/5-cicd-pipeline
             
             # Log in to ECR on the EC2 instance
             aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
             
-            # Pull the latest images defined in docker-compose.yml
+            # Set environment variables for the specific image versions to be deployed
+            export VISUALIZER_UI_IMAGE_URI="${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/visualizer-ui:${{ env.GIT_SHA }}"
+            export NETWORK_API_IMAGE_URI="${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/network-api:${{ env.GIT_SHA }}"
+            
+            # Pull the specific new images from ECR
             docker-compose pull
             
-            # Stop and restart the services
+            # Stop, remove old containers, and start the new ones
             docker-compose up -d --remove-orphans
             
             echo "Deployment successful!"
