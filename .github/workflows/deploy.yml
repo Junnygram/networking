@@ -1,156 +1,98 @@
-# This workflow builds and deploys the microservices application.
-# It intelligently detects which services have changed and only rebuilds/redeploys them.
-
-name: 'Build and Deploy Microservices'
+name: Build and Deploy Microservices
 
 on:
   push:
     branches:
-      - main # Or your primary branch
+      - main
     paths:
-      - 'bonus/5-cicd-pipeline/**'
-  workflow_dispatch: # Allow manual triggering
+      - bonus/5-cicd-pipeline/apps/**
+  workflow_dispatch:
 
 env:
-  # The path to your microservices directory
   SERVICES_BASE_PATH: bonus/5-cicd-pipeline/apps
-  AWS_REGION: us-east-1 # Define AWS region for ECR operations
+  AWS_REGION: us-east-1
 
 jobs:
-  build-and-deploy:
-    name: 'Build, Push, and Deploy'
+  deploy:
+    name: Build and Deploy
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Fetch all history so we can compare commits
           fetch-depth: 0
 
-      - name: Configure AWS Credentials
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }} # Use the AWS_REGION from infra.yml output or directly define
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Get AWS Account ID
-        id: get-aws-account-id
         run: echo "AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_ENV
-        
-      - name: Find changed services
-        id: changed-services
+
+      - name: Detect changed services
+        id: changed
         run: |
-          # Get the list of all files that have changed in this push.
-          # For a workflow_run or dispatch, you might need a different git diff command.
-          # This example is simplified for a push event.
-          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
-          echo "All changed files:"
-          echo "$CHANGED_FILES"
+          CHANGED_FILES=$(git diff --name-only HEAD~1)
+          SERVICES=$(echo "$CHANGED_FILES" \
+            | grep "^${SERVICES_BASE_PATH}" \
+            | cut -d/ -f4 \
+            | sort -u)
 
-          # From the changed files, find the unique parent directories that are potential services
-          # and ensure they are inside the SERVICES_BASE_PATH.
-          POTENTIAL_DIRS=$(echo "$CHANGED_FILES" | xargs -I {} dirname {} | grep "${{ env.SERVICES_BASE_PATH }}" | sort -u)
-          
-          BUILDABLE_SERVICES=""
-          for DIR in $POTENTIAL_DIRS; do
-            # Check if a Dockerfile exists directly in the identified directory.
-            if [ -f "$DIR/Dockerfile" ]; then
-              SERVICE_NAME=$(basename "$DIR")
-              # Add to list, ensuring no duplicates.
-              if [[ ! " $BUILDABLE_SERVICES " =~ " $SERVICE_NAME " ]]; then
-                BUILDABLE_SERVICES="$BUILDABLE_SERVICES $SERVICE_NAME"
-              fi
-            fi
-          done
-
-          if [ -z "$BUILDABLE_SERVICES" ]; then
-            echo "No changes detected in buildable microservices. Nothing to build."
+          if [ -z "$SERVICES" ]; then
             echo "changed=false" >> $GITHUB_OUTPUT
-          else
-            # Remove leading space and convert to JSON array.
-            JSON_ARRAY=$(echo "$BUILDABLE_SERVICES" | sed 's/^ *//' | tr ' ' '\n' | jq -R . | jq -s .)
-            echo "Services to build: $JSON_ARRAY"
-            echo "changed=true" >> $GITHUB_OUTPUT
-            echo "services=${JSON_ARRAY}" >> $GITHUB_OUTPUT
+            exit 0
           fi
 
-      - name: Get Git Commit SHA
-        id: get-sha
-        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "services=$(printf '%s\n' $SERVICES | jq -R . | jq -s .)" >> $GITHUB_OUTPUT
 
-      - name: Log in to AWS ECR
-        if: steps.changed-services.outputs.changed == 'true'
+      - name: Log in to Amazon ECR
+        if: steps.changed.outputs.changed == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-          username: AWS
-          password: ${{ secrets.AWS_ACCESS_KEY_ID }} # Use AWS_ACCESS_KEY_ID as username placeholder
-          
+
       - name: Set up Docker Buildx
-        if: steps.changed-services.outputs.changed == 'true'
+        if: steps.changed.outputs.changed == 'true'
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push changed services to ECR
-        if: steps.changed-services.outputs.changed == 'true'
+      - name: Build and push images
+        if: steps.changed.outputs.changed == 'true'
         run: |
-          SERVICES='${{ steps.changed-services.outputs.services }}'
-          ECR_REGISTRY="${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
-          TAG="${{ env.GIT_SHA }}"
-          echo "Building and pushing services to ECR: $SERVICES with tag $TAG"
-          for SERVICE in $(echo "$SERVICES" | jq -r '.[]'); do
-            IMAGE_URI="$ECR_REGISTRY/$SERVICE:$TAG"
-            echo "Building and pushing $IMAGE_URI..."
+          TAG=$(git rev-parse --short HEAD)
+          for SERVICE in $(echo '${{ steps.changed.outputs.services }}' | jq -r '.[]'); do
             docker buildx build --push \
-              --tag "$IMAGE_URI" \
-              --file "${{ env.SERVICES_BASE_PATH }}/${SERVICE}/Dockerfile" \
-              "${{ env.SERVICES_BASE_PATH }}/${SERVICE}"
+              -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$SERVICE:$TAG \
+              $SERVICES_BASE_PATH/$SERVICE
           done
 
-      - name: Download EC2 Instance IP from Infra Workflow
+      - name: Download EC2 IP from infra workflow
         uses: dawidd6/action-download-artifact@v6
         with:
-          # Name of the workflow that produced the artifact.
-          # Must match the `name:` field in `infra.yml`.
-          workflow: infra.yml
-          # Get artifact from the latest successful run on the current branch.
+          workflow: Infrastructure Management (Terraform)
           workflow_conclusion: success
           name: ec2-instance-ip
           path: /tmp
 
-      - name: Read EC2 IP Address
-        id: read_ip
+      - name: Read EC2 IP
         run: echo "EC2_PUBLIC_IP=$(cat /tmp/instance_public_ip.txt)" >> $GITHUB_ENV
 
       - name: Deploy to EC2
-        if: env.EC2_PUBLIC_IP != ''
         uses: appleboy/ssh-action@master
         with:
           host: ${{ env.EC2_PUBLIC_IP }}
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Navigate to the project directory where docker-compose.yml is located
             cd bonus/5-cicd-pipeline
-            
-            # Log in to ECR on the EC2 instance
-            aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-            
-            # Set environment variables for the specific image versions to be deployed
-            export VISUALIZER_UI_IMAGE_URI="${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/visualizer-ui:${{ env.GIT_SHA }}"
-            export NETWORK_API_IMAGE_URI="${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/network-api:${{ env.GIT_SHA }}"
-            
-            # Pull the specific new images from ECR
+
+            aws ecr get-login-password --region us-east-1 \
+              | docker login --username AWS --password-stdin \
+                $AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
+
             docker-compose pull
-            
-            # Stop, remove old containers, and start the new ones
             docker-compose up -d --remove-orphans
-            
-            echo "Deployment successful!"
-      
-      - name: Deployment Failed
-        if: env.EC2_PUBLIC_IP == ''
-        run: |
-          echo "EC2 instance IP not found. Was the infrastructure workflow run successfully?"
-          exit 1

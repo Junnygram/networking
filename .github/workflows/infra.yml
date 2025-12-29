@@ -1,37 +1,27 @@
-# This workflow manages AWS infrastructure using Terraform.
-# It can be triggered manually to either 'apply' or 'destroy' the infrastructure.
-
-name: 'Infrastructure Management (Terraform)'
+name: Infrastructure Management (Terraform)
 
 on:
+  push:
+    paths:
+      - bonus/5-cicd-pipeline/terraform/**
   workflow_dispatch:
-    inputs:
-      action:
-        description: 'Select Terraform action (apply or destroy)'
-        required: true
-        default: 'apply'
-        type: choice
-        options:
-          - apply
-          - destroy
 
-# Environment variables available to all jobs
 env:
-  AWS_REGION: 'us-east-1' # Change if you use a different region
+  AWS_REGION: us-east-1
   TF_STATE_BUCKET: ${{ secrets.S3_BUCKET_NAME }}
+  TF_STATE_KEY: terraform/infra.tfstate
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  
+
 jobs:
   terraform:
-    name: 'Terraform Workflow'
+    name: Terraform Infrastructure
     runs-on: ubuntu-latest
-    
+
     defaults:
       run:
         shell: bash
-        # The working directory is set to where the Terraform files are located.
-        working-directory: ./bonus/5-cicd-pipeline/terraform
+        working-directory: bonus/5-cicd-pipeline/terraform
 
     steps:
       - name: Checkout repository
@@ -40,9 +30,9 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.8.0 # Pinned to a stable version
+          terraform_version: 1.8.0
 
-      - name: Configure AWS Credentials
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
@@ -50,47 +40,30 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Terraform Init
-        id: init
-        run: terraform init -backend-config="bucket=${{ env.TF_STATE_BUCKET }}"
+        run: |
+          terraform init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=${TF_STATE_KEY}" \
+            -backend-config="region=${AWS_REGION}"
 
       - name: Terraform Validate
-        id: validate
         run: terraform validate
 
-      - name: Terraform Plan
-        id: plan
-        # The plan is only generated for the 'apply' action.
-        if: github.event.inputs.action == 'apply'
-        run: terraform plan -no-color -input=false -out=tfplan
-      
-      - name: Terraform Apply
-        id: apply
-        if: github.event.inputs.action == 'apply'
-        run: terraform apply -auto-approve -input=false tfplan
+      - name: Terraform Apply (auto on push)
+        if: github.event_name == 'push'
+        run: terraform apply -auto-approve
 
-      - name: Save Instance IP for Deployment
-        id: save-ip
-        if: github.event.inputs.action == 'apply'
-        run: |
-          # Extract the IP address from Terraform output and save it to an artifact.
-          # This artifact will be used by the deployment workflow.
-          terraform output -raw instance_public_ip > instance_public_ip.txt
-          echo "EC2_PUBLIC_IP=$(cat instance_public_ip.txt)" >> $GITHUB_ENV
+      - name: Save EC2 Public IP
+        if: github.event_name == 'push'
+        run: terraform output -raw instance_public_ip > instance_public_ip.txt
 
-      - name: Upload Instance IP Artifact
-        if: github.event.inputs.action == 'apply'
+      - name: Upload EC2 IP Artifact
+        if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
           name: ec2-instance-ip
-          path: ./bonus/5-cicd-pipeline/terraform/instance_public_ip.txt
+          path: bonus/5-cicd-pipeline/terraform/instance_public_ip.txt
 
-      - name: Show Terraform Outputs
-        id: outputs
-        if: github.event.inputs.action == 'apply'
-        run: terraform output
-
-      - name: Terraform Destroy
-        id: destroy
-        # The destroy action is only run when 'destroy' is selected.
-        if: github.event.inputs.action == 'destroy'
-        run: terraform destroy -auto-approve -input=false
+      - name: Terraform Destroy (manual kill switch)
+        if: github.event_name == 'workflow_dispatch'
+        run: terraform destroy -auto-approve
