@@ -104,9 +104,9 @@ resource "aws_instance" "web_server" {
   }
 }
 
-# ECR Repository for Frontend App
-resource "aws_ecr_repository" "frontend_app_repo" {
-  name                 = "frontend-app"
+# ECR Repository for Visualizer UI
+resource "aws_ecr_repository" "visualizer_ui_repo" {
+  name                 = "visualizer-ui"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -114,9 +114,9 @@ resource "aws_ecr_repository" "frontend_app_repo" {
   }
 }
 
-# ECR Repository for Backend Service
-resource "aws_ecr_repository" "backend_service_repo" {
-  name                 = "backend-service"
+# ECR Repository for Network API
+resource "aws_ecr_repository" "network_api_repo" {
+  name                 = "network-api"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -125,14 +125,14 @@ resource "aws_ecr_repository" "backend_service_repo" {
 }
 
 # Output the ECR repository URLs for use in CI/CD
-output "frontend_app_ecr_repo_url" {
-  description = "The URL of the ECR repository for the frontend-app."
-  value       = aws_ecr_repository.frontend_app_repo.repository_url
+output "visualizer_ui_ecr_repo_url" {
+  description = "The URL of the ECR repository for the visualizer-ui."
+  value       = aws_ecr_repository.visualizer_ui_repo.repository_url
 }
 
-output "backend_service_ecr_repo_url" {
-  description = "The URL of the ECR repository for the backend-service."
-  value       = aws_ecr_repository.backend_service_repo.repository_url
+output "network_api_ecr_repo_url" {
+  description = "The URL of the ECR repository for the network-api."
+  value       = aws_ecr_repository.network_api_repo.repository_url
 }
 
 # Output the public IP of the EC2 instance
