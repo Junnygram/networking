@@ -84,7 +84,7 @@ cleanup() {
 setup() {
     echo "--- Installing prerequisites ---"
     apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3.12-venv curl iproute2
+    DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3.12-venv curl iproute2 redis-server nginx
     echo "Prerequisite installation complete."
 
     echo "--- Building segmented network infrastructure ---"

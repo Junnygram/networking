@@ -14,27 +14,6 @@
 # Exit on any error
 set -e
 
-
-
-# --- Prerequisite Installation ---
-echo "### Step 0: Installing prerequisites..."
-
-# Check if running as root
-if [ "$EUID" -ne 0 ]; then
-  echo "Please run this script as root or with sudo."
-  exit 1
-fi
-
-# Update package lists and install prerequisites
-apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3.12-venv curl iproute2
-
-echo "Prerequisite installation complete."
-echo ""
-
-
-
-
 # --- Global variables for venv and command paths ---
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 VENV_DIR="$SCRIPT_DIR/../../networking_venv" # Assumes venv is in the root project directory
@@ -42,11 +21,19 @@ PYTHON_CMD="$VENV_DIR/bin/python"
 
 # --- Prerequisites: Ensure Python venv and packages are ready ---
 ensure_python_venv() {
-    if [ ! -d "$VENV_DIR" ]; then
-        echo "Creating Python virtual environment at $VENV_DIR..."
-        python3 -m venv "$VENV_DIR"
-        "$PYTHON_CMD" -m pip install -U pip
+    echo "--- Ensuring a clean Python virtual environment ---"
+    # Always remove the old venv to ensure a clean state
+    if [ -d "$VENV_DIR" ]; then
+        echo "Removing existing virtual environment."
+        rm -rf "$VENV_DIR"
     fi
+    
+    echo "Creating Python virtual environment at $VENV_DIR..."
+    python3 -m venv "$VENV_DIR"
+    
+    echo "Upgrading pip in the new virtual environment..."
+    "$PYTHON_CMD" -m pip install --upgrade pip
+    
     echo "--- Ensuring Python packages are installed in venv ---"
     "$PYTHON_CMD" -m pip install -q -U Flask requests psycopg2-binary redis
     echo "✅ Python virtual environment ready."
@@ -222,13 +209,13 @@ start_services() {
     sleep 3
 
     echo "Starting application services..."
-    sudo ip netns exec api-gateway "$PYTHON_CMD" "$SCRIPT_DIR/api-gateway-lb.py" > /tmp/api-gateway-lb.log 2>&1 &
-    sudo ip netns exec order-service "$PYTHON_CMD" "$SCRIPT_DIR/order-service.py" > /tmp/order-service.log 2>&1 &
+    (sudo ip netns exec api-gateway nohup "$PYTHON_CMD" "$SCRIPT_DIR/api-gateway-lb.py" > /tmp/api-gateway-lb.log 2>&1 &)
+    (sudo ip netns exec order-service nohup "$PYTHON_CMD" "$SCRIPT_DIR/order-service.py" > /tmp/order-service.log 2>&1 &)
     
     echo "Starting Product Service replicas..."
-    sudo ip netns exec product-service-1 "$PYTHON_CMD" "$SCRIPT_DIR/product-service.py" > /tmp/product-service-1.log 2>&1 &
-    sudo ip netns exec product-service-2 "$PYTHON_CMD" "$SCRIPT_DIR/product-service.py" > /tmp/product-service-2.log 2>&1 &
-    sudo ip netns exec product-service-3 "$PYTHON_CMD" "$SCRIPT_DIR/product-service.py" > /tmp/product-service-3.log 2>&1 &
+    (sudo ip netns exec product-service-1 nohup "$PYTHON_CMD" "$SCRIPT_DIR/product-service.py" > /tmp/product-service-1.log 2>&1 &)
+    (sudo ip netns exec product-service-2 nohup "$PYTHON_CMD" "$SCRIPT_DIR/product-service.py" > /tmp/product-service-2.log 2>&1 &)
+    (sudo ip netns exec product-service-3 nohup "$PYTHON_CMD" "$SCRIPT_DIR/product-service.py" > /tmp/product-service-3.log 2>&1 &)
 
     echo ""
     echo "✅ All services started."

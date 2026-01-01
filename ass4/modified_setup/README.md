@@ -33,3 +33,39 @@ This directory contains a new set of scripts that build a more advanced and real
     sudo ./assignment4-services.sh stop
     sudo ./assignment4-network.sh cleanup
     ```
+
+## Verifying Round-Robin Load Balancing
+
+The API Gateway is configured to distribute requests to the three `product-service` replicas in a round-robin fashion. You can verify this by sending multiple requests and observing the logs of the service replicas.
+
+1.  **Send multiple requests to the `/api/products` endpoint:**
+
+    You can do this from the host machine using `curl`. The requests will be forwarded through the `nginx-lb` namespace to the `api-gateway`.
+
+    ```bash
+    for i in {1..6}; do curl http://172.20.0.10/api/products; echo; done
+    ```
+    *(Note: You might need to run `sudo apt-get install curl` if you don't have it installed.)*
+
+2.  **Check the logs of the product service replicas:**
+
+    The `assignment4-services.sh` script redirects the output of each service to a log file in the `/tmp` directory. You can `tail` these log files to see which replica served which request.
+
+    Open three separate terminal windows and run the following commands, one in each terminal:
+
+    **Terminal 1:**
+    ```bash
+    tail -f /tmp/product-service-1.log
+    ```
+
+    **Terminal 2:**
+    ```bash
+    tail -f /tmp/product-service-2.log
+    ```
+
+    **Terminal 3:**
+    ```bash
+    tail -f /tmp/product-service-3.log
+    ```
+
+    Now, when you run the `curl` loop from step 1, you will see the log messages appearing in each terminal in a round-robin sequence, confirming that the load balancing is working. Each log entry will show the IP address of the replica that served the request.

@@ -2,6 +2,8 @@ name: Infrastructure Management (Terraform)
 
 on:
   push:
+    branches:
+      - main
     paths:
       - bonus/5-cicd-pipeline/terraform/**
   workflow_dispatch:
