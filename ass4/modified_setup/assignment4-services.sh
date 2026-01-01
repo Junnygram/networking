@@ -147,7 +147,7 @@ import psycopg2, os, sys, time, json
 
 app = Flask(__name__)
 # The host postgres server is accessible via its IP on the backend bridge
-DB_HOST = os.getenv("DB_HOST", "172.21.0.1") 
+DB_HOST = os.getenv("DB_HOST", "172.22.0.60") 
 
 def get_db():
     return psycopg2.connect(host=DB_HOST, dbname="orders", user="postgres", password="postgres", connect_timeout=3)

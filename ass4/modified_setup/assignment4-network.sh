@@ -40,6 +40,7 @@ NS_NET_MAP=(
     ["order-service"]="backend"
     ["redis-cache"]="database"
     ["postgres-db"]="database"
+    ["backend-db-router"]="backend" # Multi-homed, but primary considered backend
 )
 
 # --- IP Address Assignments ---
@@ -54,6 +55,8 @@ NS_IP_MAP=(
     ["order-service"]="172.21.0.40/24"
     ["redis-cache"]="172.22.0.50/24"
     ["postgres-db"]="172.22.0.60/24"
+    ["backend-db-router-backend"]="172.21.0.100/24"
+    ["backend-db-router-database"]="172.22.0.100/24"
 )
 
 # --- Main Cleanup Function ---
@@ -107,8 +110,8 @@ setup() {
         net_suffix="${NS_NET_MAP[$ns]}"
         bridge="br-$net_suffix"
         
-        # Skip api-gateway, as it has a special setup
-        if [ "$ns" == "api-gateway" ]; then continue; fi
+        # Skip api-gateway and the router, as they have a special setup
+        if [ "$ns" == "api-gateway" ] || [ "$ns" == "backend-db-router" ]; then continue; fi
 
         echo "--- Configuring namespace: $ns ---"
         sudo ip netns add "$ns"
@@ -134,6 +137,12 @@ setup() {
         sudo ip netns exec "$ns" ip link set dev "$veth_ns" up
         sudo ip netns exec "$ns" ip link set dev lo up
         sudo ip netns exec "$ns" ip route add default via "$gateway_ip"
+
+        # If it's a backend service, add a route to the database network via our router
+        if [ "$net_suffix" == "backend" ]; then
+            echo "Adding route to database network for $ns..."
+            sudo ip netns exec "$ns" ip route add 172.22.0.0/24 via "${NS_IP_MAP[backend-db-router-backend]%%/*}"
+        fi
     done
 
     # --- Special setup for the multi-homed API Gateway ---
@@ -163,6 +172,30 @@ setup() {
     
     sudo ip netns exec api-gateway ip link set dev lo up
     
+    # --- Special setup for the multi-homed Backend-DB Router ---
+    echo "--- Configuring multi-homed namespace: backend-db-router ---"
+    sudo ip netns add backend-db-router
+    
+    # 1. Backend veth pair
+    sudo ip link add veth-bdr-be type veth peer name veth-bdr-be-br
+    sudo ip link set veth-bdr-be-br master br-backend
+    sudo ip link set veth-bdr-be-br up
+    sudo ip link set veth-bdr-be netns backend-db-router
+    sudo ip netns exec backend-db-router ip addr add "${NS_IP_MAP[backend-db-router-backend]}" dev veth-bdr-be
+    sudo ip netns exec backend-db-router ip link set dev veth-bdr-be up
+    
+    # 2. Database veth pair
+    sudo ip link add veth-bdr-db type veth peer name veth-bdr-db-br
+    sudo ip link set veth-bdr-db-br master br-database
+    sudo ip link set veth-bdr-db-br up
+    sudo ip link set veth-bdr-db netns backend-db-router
+    sudo ip netns exec backend-db-router ip addr add "${NS_IP_MAP[backend-db-router-database]}" dev veth-bdr-db
+    sudo ip netns exec backend-db-router ip link set dev veth-bdr-db up
+
+    # 3. Enable IP forwarding within the router namespace
+    sudo ip netns exec backend-db-router sysctl -w net.ipv4.ip_forward=1 > /dev/null
+    sudo ip netns exec backend-db-router ip link set dev lo up
+
     echo "✅ Segmented network setup complete."
 }
 
