@@ -129,7 +129,12 @@ def wait_for_redis():
 
 @app.route('/products', methods=['GET'])
 def get_products():
-    instance_ip = os.popen('ip addr show eth0').read().split("inet ")[1].split("/")[0]
+    instance_ip = "N/A"
+    try:
+        instance_ip = os.popen('ip addr show eth0').read().split("inet ")[1].split("/")[0]
+    except IndexError:
+        # Fallback for when eth0 is not present or has no IP
+        pass
     return jsonify({"products": list(PRODUCTS.values()), "served_by": instance_ip})
 
 if __name__ == '__main__':
@@ -247,7 +252,7 @@ import requests, time, sys
 
 # These are the IPs for the NEW segmented network
 SERVICES = {
-    'nginx-lb': 'http://172.20.0.10:80',
+    'nginx-lb': 'http://172.20.0.10:80/health',
     'api-gateway-lb': 'http://172.20.0.20:3000/health',
     'product-service-1': 'http://172.21.0.30:5000/products', # product service doesn't have /health
     'product-service-2': 'http://172.21.0.31:5000/products',

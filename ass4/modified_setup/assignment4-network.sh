@@ -83,8 +83,29 @@ cleanup() {
     echo "✅ Network cleanup complete."
 }
 
+# --- Function to flush all iptables rules ---
+flush_iptables() {
+    echo "--- Flushing all iptables FORWARD rules and setting policy to ACCEPT ---"
+    if command -v iptables >/dev/null; then
+        sudo iptables -P FORWARD ACCEPT 2>/dev/null || true
+        sudo iptables -F FORWARD 2>/dev/null || true
+        echo "✅ iptables FORWARD chain flushed."
+    else
+        echo "iptables command not found, skipping flush."
+    fi
+}
+
 # --- Main Setup Function ---
 setup() {
+    # Ensure a clean state before starting
+    flush_iptables
+
+    echo "--- Stopping host-level PostgreSQL to prevent conflicts ---"
+    if command -v systemctl >/dev/null; then
+        sudo systemctl stop postgresql 2>/dev/null || true
+        sudo systemctl disable postgresql 2>/dev/null || true
+    fi
+
     echo "--- Installing prerequisites ---"
     apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3.12-venv curl iproute2 redis-server nginx
@@ -196,6 +217,40 @@ setup() {
     sudo ip netns exec backend-db-router sysctl -w net.ipv4.ip_forward=1 > /dev/null
     sudo ip netns exec backend-db-router ip link set dev lo up
 
+    # --- Final Step: Start PostgreSQL in its namespace ---
+    echo "--- Setting up and starting PostgreSQL ---"
+    apt-get install -y postgresql
+    
+    # Run setup inside the namespace
+    sudo ip netns exec postgres-db bash -c '
+        set -e
+        mkdir -p /var/run/postgresql
+        chown -R postgres:postgres /var/run/postgresql
+        
+        # Initialize DB, but check if its already there to be idempotent
+        if [ ! -d /var/lib/postgresql/16/main ]; then
+            sudo -u postgres /usr/lib/postgresql/16/bin/initdb -D /var/lib/postgresql/16/main
+        fi
+
+        # Clean up stale PID file before starting
+        rm -f /var/lib/postgresql/16/main/postmaster.pid
+
+        # Start postgres, listening on all interfaces
+        echo "listen_addresses = '\''*'\''" >> /var/lib/postgresql/16/main/postgresql.conf
+        # Allow md5 password auth
+        echo "host all all 0.0.0.0/0 md5" >> /var/lib/postgresql/16/main/pg_hba.conf
+
+        # Start the server in the background, logging to a file inside the data directory
+        sudo -u postgres /usr/lib/postgresql/16/bin/pg_ctl -D /var/lib/postgresql/16/main -l /var/lib/postgresql/16/main/logfile start
+
+        # Give it a moment to start up
+        sleep 5
+
+        # Create the database and user if they dont exist
+        sudo -u postgres psql -c "CREATE USER postgres WITH PASSWORD '\''postgres'\''" || echo "User already exists."
+        sudo -u postgres psql -c "CREATE DATABASE orders" || echo "Database already exists."
+    '
+    
     echo "✅ Segmented network setup complete."
 }
 
