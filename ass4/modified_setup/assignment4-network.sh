@@ -14,6 +14,13 @@
 
 set -e
 
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+  echo "Please run this script as root or with sudo."
+  exit 1
+fi
+
+
 # --- Network Definitions ---
 declare -A BRIDGES
 BRIDGES=(
@@ -75,6 +82,11 @@ cleanup() {
 
 # --- Main Setup Function ---
 setup() {
+    echo "--- Installing prerequisites ---"
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3.12-venv curl iproute2
+    echo "Prerequisite installation complete."
+
     echo "--- Building segmented network infrastructure ---"
 
     # Enable IP forwarding on the host to route between bridges
@@ -101,9 +113,13 @@ setup() {
         echo "--- Configuring namespace: $ns ---"
         sudo ip netns add "$ns"
 
-        # Create veth pair
-        veth_ns="veth-${ns:0:11}" # Keep name short
+        # Create a unique, short name for the veth pair.
+        # Substitutions are applied, then the result is truncated to 7 chars to be safe.
+        short_name=$(echo "$ns" | sed 's/product-service/ps/' | sed 's/postgres/pg/' | sed 's/gateway/gw/' | sed 's/nginx/ngx/' | sed 's/-//g')
+        short_name=${short_name:0:7}
+        veth_ns="veth-${short_name}"
         veth_br="${veth_ns}-br"
+        
         sudo ip link add "$veth_ns" type veth peer name "$veth_br"
 
         # Attach to bridge and move to namespace
@@ -152,7 +168,7 @@ setup() {
 
 
 # --- Main script logic ---
-if [ "$1" == "cleanup" ]; then
+if [ "" == "cleanup" ]; then
     cleanup
 else
     # Run cleanup first to ensure a clean state

@@ -1,0 +1,100 @@
+version: '3.8'
+
+# This file defines the multi-container application for Docker Swarm.
+# The services will be distributed across the manager and worker nodes.
+
+services:
+  # 1. Nginx Load Balancer: The single entry point for traffic.
+  nginx-lb:
+    image: junioroyewunmi/nginx-lb:1.0
+    ports:
+      - "8080:80" # Map host port 8080 to container port 80
+    networks:
+      - frontend_net
+    depends_on:
+      - api-gateway
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager] # Prefer to run nginx on the manager
+
+  # 2. API Gateway: Routes incoming requests to the correct backend service.
+  api-gateway:
+    image: junioroyewunmi/api-gateway:1.0
+    networks:
+      - frontend_net
+      - backend_net
+    depends_on:
+      - product-service
+      - order-service
+    deploy:
+      replicas: 2 # Run two instances for availability
+
+  # 3. Product Service: Manages product data and interacts with the Redis cache.
+  product-service:
+    image: junioroyewunmi/product-service:1.0
+    networks:
+      - backend_net
+      - cache_net
+    depends_on:
+      - redis-cache
+    environment:
+      REDIS_HOST: redis-cache # Service discovery: Docker Swarm resolves 'redis-cache' to the correct container IP
+    deploy:
+      replicas: 3 # Run three instances for load balancing
+
+  # 4. Order Service: Manages order data and interacts with the PostgreSQL database.
+  order-service:
+    image: junioroyewunmi/order-service:1.0
+    networks:
+      - backend_net
+      - database_net
+    depends_on:
+      - postgres-db
+    environment:
+      DB_HOST: postgres-db
+      DB_NAME: orders
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    deploy:
+      replicas: 2 # Run two instances for availability
+
+  # 5. Redis Cache: In-memory cache for the product service.
+  redis-cache:
+    image: redis:7-alpine
+    networks:
+      - cache_net
+    deploy:
+      replicas: 1
+
+  # 6. PostgreSQL Database: Persistent storage for the order service.
+  postgres-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Use a named volume for data persistence
+    networks:
+      - database_net
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager] # Keep the database on the manager for simplicity
+
+# Docker Swarm uses an "overlay" network driver by default for multi-host communication.
+# We define the networks here, and Swarm makes them available across all nodes.
+networks:
+  frontend_net:
+    driver: overlay
+  backend_net:
+    driver: overlay
+  cache_net:
+    driver: overlay
+  database_net:
+    driver: overlay
+
+# Named volumes are managed by Docker and are the preferred way to persist data.
+volumes:
+  postgres_data:

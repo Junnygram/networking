@@ -86,6 +86,11 @@ setup() {
     sudo ip addr add "$BRIDGE_IP" dev "$BRIDGE_NAME"
     sudo ip link set "$BRIDGE_NAME" up
 
+    # Allow traffic to be forwarded to and from the bridge interface
+    echo "Adding iptables rules to allow forwarding on the bridge..."
+    sudo iptables -A FORWARD -i "$BRIDGE_NAME" -j ACCEPT
+    sudo iptables -A FORWARD -o "$BRIDGE_NAME" -j ACCEPT
+
     # Loop through the defined services to create and configure each one.
     for i in "${!NAMESPACES[@]}"; do
         NS_NAME=${NAMESPACES[$i]}

@@ -1,0 +1,13 @@
+{
+  "name": "visualizer-ui",
+  "version": "1.0.0",
+  "description": "UI for the Micro-Network Visualizer",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-fetch": "^2.6.1"
+  }
+}

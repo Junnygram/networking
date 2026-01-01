@@ -1,0 +1,69 @@
+name: Infrastructure Management (Terraform)
+
+on:
+  push:
+    paths:
+      - bonus/5-cicd-pipeline/terraform/**
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  TF_STATE_BUCKET: ${{ secrets.S3_BUCKET_NAME }}
+  TF_STATE_KEY: terraform/infra.tfstate
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+jobs:
+  terraform:
+    name: Terraform Infrastructure
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: bonus/5-cicd-pipeline/terraform
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=${TF_STATE_KEY}" \
+            -backend-config="region=${AWS_REGION}"
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Apply (auto on push)
+        if: github.event_name == 'push'
+        run: terraform apply -auto-approve
+
+      - name: Save EC2 Public IP
+        if: github.event_name == 'push'
+        run: terraform output -raw instance_public_ip > instance_public_ip.txt
+
+      - name: Upload EC2 IP Artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ec2-instance-ip
+          path: bonus/5-cicd-pipeline/terraform/instance_public_ip.txt
+
+      - name: Terraform Destroy (manual kill switch)
+        if: github.event_name == 'workflow_dispatch'
+        run: terraform destroy -auto-approve

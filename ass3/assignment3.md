@@ -1,252 +1,67 @@
-# Assignment 3: Monitoring and Debugging
+# Assignment 3: Monitoring and Debugging Toolkit
 
-This assignment focuses on creating a suite of monitoring and debugging tools to observe the health and traffic of the microservices environment you deployed in Assignment 2.
+This document details the monitoring and debugging tools created to observe the health and performance of the deployed microservices. It highlights the evolution from a set of individual scripts to a unified, automated toolkit.
 
-These scripts are designed to be run from the **host machine**, not from within a network namespace.
+## 1. Original Plan
 
----
+The original plan for Day 3 was to create four separate, standalone scripts for monitoring:
 
-## ⚠️ Step 0: Prerequisites
+*   A shell script for capturing traffic with `tcpdump`.
+*   A Python script for checking service health endpoints.
+*   A shell script for tracking network connections with `conntrack` and `ss`.
+*   A Python script for visualizing the network topology.
 
-Before you begin, ensure you have the necessary tools installed.
+This plan required manual installation of all prerequisites (like `tcpdump`, `conntrack`, and Python libraries) and assumed the scripts would be run in a perfectly configured environment. The scripts themselves were basic and lacked robust error handling.
 
-**1. System Packages:**
-Install `tcpdump` for traffic analysis and `conntrack` for connection tracking.
+## 2. Actual Implementation
 
-```bash
-# For Debian/Ubuntu
-sudo apt-get update
-sudo apt-get install -y tcpdump conntrack
-```
+The final implementation consolidates all monitoring functions into a single, intelligent shell script: `assignment3.sh`. This script acts as a unified toolkit, providing a much cleaner and more powerful user experience.
 
-**2. Python Packages:**
-The health monitor requires the `requests` library.
+The toolkit is invoked with a command specifying the desired tool:
+*   `sudo ./assignment3.sh traffic`: Monitors raw network traffic on the bridge.
+*   `sudo ./assignment3.sh health`: Runs a continuous health check against all service endpoints.
+*   `sudo ./assignment3.sh connections`: Tracks active connections and their states.
+*   `sudo ./assignment3.sh topology`: Generates and displays a text-based network diagram.
 
-```bash
-pip3 install requests
-```
+<!-- Image Placeholder: Architecture Diagram showing Monitoring Tools -->
+<!-- A visual diagram or an output of the 'topology' command would go here. e.g. ![Architecture Diagram](images/monitoring_architecture.png) -->
 
-**3. Running Environment:**
-This assignment assumes that:
-*   The network from **Assignment 1** is running.
-*   All the application services from **Assignment 2** are running.
+## 3. Key Changes and Justifications
 
----
+The implemented toolkit is a significant improvement over the original set of scripts.
 
-## Task 3.1: Network Traffic Analysis
+| Feature                 | Original Plan                                | Actual Implementation                                                                                                                                                              | Justification                                                                                                                                                                                             |
+| ----------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Script Organization** | Four separate, disconnected scripts.         | A single, unified toolkit (`assignment3.sh`) that accepts the desired tool as a command-line argument.                                                                           | This approach is much cleaner, easier to manage, and more user-friendly. It provides a single entry point for all monitoring tasks, creating a cohesive "monitoring dashboard" experience.           |
+| **Dependency Management** | Manual installation of all prerequisites.    | **Automatic, on-demand prerequisite installation.** The script checks for required packages for the *specific tool being run* and installs them automatically using `apt-get` and `pip`. | This makes the toolkit highly portable and easy to use. The user doesn't need to worry about dependencies, as the script handles it for them, improving the setup experience and reducing errors. |
+| **Code Structure**      | Static script files.                         | The core logic is in the main shell script. Python-based tools (`health`, `topology`) are dynamically generated as temporary files at runtime.                                      | This makes the entire toolkit self-contained in a single file (`assignment3.sh`), which simplifies distribution and management.                                                                 |
+| **Robustness & Error Handling** | Minimal error checking.                | The tools are more robust. For example, the connection tracker and topology visualizer first check if the network namespaces exist before attempting to inspect them.                     | This prevents the scripts from failing with cryptic errors if the environment is not in the expected state, making the tools more reliable in practice.                                                   |
+| **User Experience (UX)**| Basic command-line output.                   | The output is cleaner and more user-friendly, with clear headers, status symbols (✅/❌), and continuously updating views for the `health` and `connections` tools.              | A polished and informative interface makes the tools more effective and easier to interpret, which is critical for monitoring and debugging.                                                          |
 
-Create a script to monitor all traffic flowing across the `br0` bridge using `tcpdump`. This allows you to see all communication between your services in real-time.
+## 4. Monitoring Tools Overview
 
-**Create the `monitor-traffic.sh` script:**
-```bash
-#!/bin/bash
-# monitor-traffic.sh
+The `assignment3.sh` script provides the following capabilities:
 
-echo "=== Network Traffic Monitor ==="
-echo "Monitoring bridge: br0"
-echo "Press Ctrl+C to stop"
-echo ""
+### a. Traffic Analysis (`traffic`)
+Uses `tcpdump` to capture and display all network packets flowing across the `br0` bridge. This is invaluable for low-level debugging of service-to-service communication.
 
-# Monitor all traffic on the bridge, with verbose output.
-# The '-i' flag specifies the interface.
-# The '-n' flag prevents DNS resolution of IPs.
-sudo tcpdump -i br0 -n -v
-```
-**To run it:** `sudo ./monitor-traffic.sh`
+<!-- Image Placeholder: Output of the 'traffic' command -->
+<!-- e.g. ![Traffic Output](images/traffic.png) -->
 
-**Deliverable:** A report analyzing the traffic between services.
+### b. Health Checker (`health`)
+Runs a continuous loop that sends HTTP requests to the `/health` endpoint of each service. It reports the status (UP/DOWN) and response latency, providing a real-time dashboard of service availability.
 
----
+<!-- Image Placeholder: Output of the 'health' command -->
+<!-- e.g. ![Health Output](images/health.png) -->
 
-## Task 3.2: Service Health Monitoring
+### c. Connection Tracker (`connections`)
+Provides a snapshot, updated every 5 seconds, of active network connections. It shows the number of established connections per namespace and a summary of connection states from the kernel's `conntrack` table.
 
-Create a Python script that periodically checks the `/health` endpoint of each service and reports its status and latency.
+<!-- Image Placeholder: Output of the 'connections' command -->
+![Connections Output](images/connections.png)
 
-**Create the `health-monitor.py` script:**
-```python
-#!/usr/bin/env python3
-import requests
-import time
-from datetime import datetime
+### d. Topology Visualizer (`topology`)
+Inspects the system's network namespaces and their IP addresses to generate a clear, text-based diagram of the entire network architecture, from the host down to each individual service.
 
-SERVICES = {
-    'nginx-lb': 'http://10.0.0.10:80/health',
-    'api-gateway': 'http://10.0.0.20:3000/health',
-    'product-service': 'http://10.0.0.30:5000/health',
-    'order-service': 'http://10.0.0.40:5000/health',
-}
-
-def check_health(service_name, url):
-    """Checks a single service endpoint."""
-    try:
-        # A timeout is crucial to prevent the monitor from hanging.
-        response = requests.get(url, timeout=2)
-        if response.status_code == 200:
-            return {"status": "UP", "latency": response.elapsed.total_seconds()}
-        else:
-            return {"status": "DOWN", "error": f"HTTP {response.status_code}"}
-    except requests.exceptions.RequestException as e:
-        return {"status": "DOWN", "error": str(e)}
-
-def monitor():
-    """Main monitoring loop."""
-    print("=== Service Health Monitor ===")
-    print(f"Started at: {datetime.now()}")
-    
-    while True:
-        print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Running Health Checks...")
-        print("-" * 60)
-        
-        all_ok = True
-        for service, url in SERVICES.items():
-            health = check_health(service, url)
-            status_symbol = "✅" if health['status'] == 'UP' else "❌"
-            
-            if health['status'] == 'UP':
-                print(f"{status_symbol} {service:20s} UP   (latency: {health['latency']*1000:.2f}ms)")
-            else:
-                all_ok = False
-                print(f"{status_symbol} {service:20s} DOWN | Reason: {health.get('error', 'Unknown')}")
-        
-        print("-" * 60)
-        if all_ok:
-            print("All services are operational.")
-
-        time.sleep(10)
-
-if __name__ == '__main__':
-    try:
-        monitor()
-    except KeyboardInterrupt:
-        print("\nMonitor stopped.")
-```
-**To run it:** `python3 ./health-monitor.py`
-
-**Deliverable:** A running health monitoring dashboard.
-
----
-
-## Task 3.3: Connection Tracking Analysis
-
-Create a script to inspect the kernel's connection tracking table (`conntrack`). This is useful for debugging firewall rules and understanding active network flows.
-
-**Create the `connection-tracker.sh` script:**
-```bash
-#!/bin/bash
-# connection-tracker.sh
-
-echo "=== Active Connection Tracker ==="
-echo "Press Ctrl+C to stop"
-echo ""
-
-while true; do
-    clear
-    echo "=== Active Connections ($(date)) ==="
-    echo ""
-    
-    echo "Connections by Service Namespace:"
-    echo "--------------------------------"
-    
-    # Use 'ss' to count established TCP connections in each namespace
-    for ns in nginx-lb api-gateway product-service order-service; do
-        # Ensure the namespace exists before trying to exec into it
-        if sudo ip netns list | grep -q "$ns"; then
-            count=$(sudo ip netns exec $ns ss -tan | grep ESTAB | wc -l)
-            echo "$ns: $count active connections"
-        else
-            echo "$ns: namespace not found"
-        fi
-    done
-    
-    echo ""
-    echo "Connection States (conntrack):"
-    echo "------------------------------"
-    # Use conntrack to view states for our specific subnet
-    sudo conntrack -L 2>/dev/null | grep "10.0.0" | \
-        awk '{print $4}' | sort | uniq -c | sort -rn
-    
-    sleep 5
-done
-```
-**To run it:** `sudo ./connection-tracker.sh`
-
-**Deliverable:** A connection tracking report.
-
----
-
-## Task 3.4: Network Topology Visualizer
-
-Create a Python script that inspects the network configuration and generates a simple text-based diagram of the topology.
-
-**Create the `topology-visualizer.py` script:**
-```python
-#!/usr/bin/env python3
-# topology-visualizer.py
-
-import subprocess
-import re
-
-def get_namespace_ips():
-    """Get IP addresses for all namespaces."""
-    try:
-        ns_list_raw = subprocess.run(
-            ['ip', 'netns', 'list'],
-            capture_output=True, text=True, check=True
-        ).stdout.strip().split('\n')
-        # Extract the first word from each line, which is the namespace name
-        namespaces = [line.split()[0] for line in ns_list_raw]
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return {}
-    
-    ips = {}
-    for ns in namespaces:
-        try:
-            result = subprocess.run(
-                ['sudo', 'ip', 'netns', 'exec', ns, 'ip', 'addr'],
-                capture_output=True, text=True, check=True
-            ).stdout
-            # Parse IP address from the 'inet' line
-            match = re.search(r'inet (\d+\.\d+\.\d+\.\d+)', result)
-            if match:
-                ips[ns] = match.group(1)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            ips[ns] = "Error reading IP"
-    
-    return ips
-
-def draw_topology():
-    """Draw ASCII network topology."""
-    ips = get_namespace_ips()
-    
-    print("=" * 70)
-    print(" " * 25 + "NETWORK TOPOLOGY")
-    print("=" * 70)
-    print()
-    print("                    Internet")
-    print("                        │")
-    print("                        │ (Host NAT)")
-    print("                        ↓")
-    print("                ┌───────────────┐")
-    print("                │   Host Machine  │")
-    print("                └───────┬───────┘")
-    print("                        │")
-    print("            ┌───────────┴───────────┐")
-    print("            │     Bridge: br0         │")
-    print("            │     IP: 10.0.0.1        │")
-    print("            └───────────┬───────────┘")
-    print("                        │")
-    
-    if not ips:
-        print("\nNo network namespaces found or 'ip' command is missing.")
-    else:
-        for name, ip in sorted(ips.items()):
-            print(f"                ├─▶ {name:20s} ({ip})")
-    
-    print("\n" + "=" * 70)
-
-if __name__ == '__main__':
-    draw_topology()
-```
-**To run it:** `sudo python3 ./topology-visualizer.py` (requires sudo to inspect namespaces).
-
-**Deliverable:** A generated network topology diagram.
+<!-- Image Placeholder: Output of the 'topology' command -->
+![Topology Output](images/topology.png)
