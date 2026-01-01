@@ -39,8 +39,6 @@ NS_NET_MAP=(
     ["product-service-3"]="backend" # Replica for load balancing
     ["order-service"]="backend"
     ["redis-cache"]="database"
-    ["postgres-db"]="database"
-    ["backend-db-router"]="backend" # Multi-homed, but primary considered backend
 )
 
 # --- IP Address Assignments ---
@@ -54,7 +52,6 @@ NS_IP_MAP=(
     ["product-service-3"]="172.21.0.32/24"
     ["order-service"]="172.21.0.40/24"
     ["redis-cache"]="172.22.0.50/24"
-    ["postgres-db"]="172.22.0.60/24"
     ["backend-db-router-backend"]="172.21.0.100/24"
     ["backend-db-router-database"]="172.22.0.100/24"
 )
@@ -63,11 +60,30 @@ NS_IP_MAP=(
 cleanup() {
     echo "--- Tearing down all networks and namespaces ---"
 
+    # Forcefully kill any lingering processes that could hold namespaces open
+    echo "Stopping any lingering postgres or redis processes..."
+    sudo pkill -9 -f "postgres" 2>/dev/null || true
+    sudo pkill -9 -f "redis-server" 2>/dev/null || true
+    sleep 1 # Give processes a moment to die
+
+
     # Delete all namespaces
     for ns in "${!NS_NET_MAP[@]}"; do
         echo "Deleting namespace: $ns"
         sudo ip netns delete "$ns" 2>/dev/null || true
+
+        # Also delete the veth pairs associated with the namespace
+        short_name=$(echo "$ns" | sed 's/product-service/ps/' | sed 's/postgres/pg/' | sed 's/gateway/gw/' | sed 's/nginx/ngx/' | sed 's/-//g')
+        short_name=${short_name:0:7}
+        veth_br="veth-${short_name}-br"
+        sudo ip link delete "$veth_br" 2>/dev/null || true
     done
+
+    # Manually delete special veth pairs
+    sudo ip link delete "veth-api-fe-br" 2>/dev/null || true
+    sudo ip link delete "veth-api-be-br" 2>/dev/null || true
+    sudo ip link delete "veth-bdr-be-br" 2>/dev/null || true
+    sudo ip link delete "veth-bdr-db-br" 2>/dev/null || true
 
     # Delete all bridges
     for br in "${!BRIDGES[@]}"; do
@@ -100,16 +116,35 @@ setup() {
     # Ensure a clean state before starting
     flush_iptables
 
-    echo "--- Stopping host-level PostgreSQL to prevent conflicts ---"
-    if command -v systemctl >/dev/null; then
-        sudo systemctl stop postgresql 2>/dev/null || true
-        sudo systemctl disable postgresql 2>/dev/null || true
-    fi
-
     echo "--- Installing prerequisites ---"
     apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3.12-venv curl iproute2 redis-server nginx
+    DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3.12-venv curl iproute2 redis-server nginx postgresql
     echo "Prerequisite installation complete."
+
+    # --- Configure and Start Host-level PostgreSQL ---
+    echo "--- Configuring host PostgreSQL server ---"
+    
+    # Overwrite config files to allow connections from the container networks
+    cat <<EOF > /etc/postgresql/16/main/postgresql.conf
+include 'postgresql.conf.orig'
+listen_addresses = '*'
+EOF
+    cat <<EOF > /etc/postgresql/16/main/pg_hba.conf
+# Allow md5 password auth for all network connections from any source
+host    all             all             0.0.0.0/0               md5
+# Allow local connections for admin tasks
+local   all             postgres                                peer
+EOF
+
+    # Restart the service to apply changes and ensure it's running
+    echo "Restarting PostgreSQL service on host..."
+    sudo systemctl restart postgresql
+
+    # Create the user and database
+    echo "Creating database user and 'orders' database..."
+    sudo -u postgres psql -c "CREATE USER postgres WITH PASSWORD 'postgres'" || echo "User 'postgres' already exists or could not be created."
+    sudo -u postgres psql -c "CREATE DATABASE orders" || echo "Database 'orders' already exists or could not be created."
+
 
     echo "--- Building segmented network infrastructure ---"
 
@@ -216,40 +251,6 @@ setup() {
     # 3. Enable IP forwarding within the router namespace
     sudo ip netns exec backend-db-router sysctl -w net.ipv4.ip_forward=1 > /dev/null
     sudo ip netns exec backend-db-router ip link set dev lo up
-
-    # --- Final Step: Start PostgreSQL in its namespace ---
-    echo "--- Setting up and starting PostgreSQL ---"
-    apt-get install -y postgresql
-    
-    # Run setup inside the namespace
-    sudo ip netns exec postgres-db bash -c '
-        set -e
-        mkdir -p /var/run/postgresql
-        chown -R postgres:postgres /var/run/postgresql
-        
-        # Initialize DB, but check if its already there to be idempotent
-        if [ ! -d /var/lib/postgresql/16/main ]; then
-            sudo -u postgres /usr/lib/postgresql/16/bin/initdb -D /var/lib/postgresql/16/main
-        fi
-
-        # Clean up stale PID file before starting
-        rm -f /var/lib/postgresql/16/main/postmaster.pid
-
-        # Start postgres, listening on all interfaces
-        echo "listen_addresses = '\''*'\''" >> /var/lib/postgresql/16/main/postgresql.conf
-        # Allow md5 password auth
-        echo "host all all 0.0.0.0/0 md5" >> /var/lib/postgresql/16/main/pg_hba.conf
-
-        # Start the server in the background, logging to a file inside the data directory
-        sudo -u postgres /usr/lib/postgresql/16/bin/pg_ctl -D /var/lib/postgresql/16/main -l /var/lib/postgresql/16/main/logfile start
-
-        # Give it a moment to start up
-        sleep 5
-
-        # Create the database and user if they dont exist
-        sudo -u postgres psql -c "CREATE USER postgres WITH PASSWORD '\''postgres'\''" || echo "User already exists."
-        sudo -u postgres psql -c "CREATE DATABASE orders" || echo "Database already exists."
-    '
     
     echo "✅ Segmented network setup complete."
 }
