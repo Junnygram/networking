@@ -21,11 +21,19 @@ PYTHON_CMD="$VENV_DIR/bin/python"
 
 # --- Prerequisites: Ensure Python venv and packages are ready ---
 ensure_python_venv() {
-    if [ ! -d "$VENV_DIR" ]; then
-        echo "Creating Python virtual environment at $VENV_DIR..."
-        python3 -m venv "$VENV_DIR"
-        "$PYTHON_CMD" -m pip install -U pip
+    echo "--- Ensuring a clean Python virtual environment ---"
+    # Always remove the old venv to ensure a clean state
+    if [ -d "$VENV_DIR" ]; then
+        echo "Removing existing virtual environment."
+        rm -rf "$VENV_DIR"
     fi
+    
+    echo "Creating Python virtual environment at $VENV_DIR..."
+    python3 -m venv "$VENV_DIR"
+    
+    echo "Upgrading pip in the new virtual environment..."
+    "$PYTHON_CMD" -m pip install --upgrade pip
+    
     echo "--- Ensuring Python packages are installed in venv ---"
     "$PYTHON_CMD" -m pip install -q -U Flask requests psycopg2-binary redis
     echo "✅ Python virtual environment ready."
@@ -33,7 +41,8 @@ ensure_python_venv() {
 
 # --- Create all application files ---
 create_files() {
-    if [ -f "$SCRIPT_DIR/api-gateway-lb.py" ]; then return; fi
+    # Always recreate files to ensure latest version
+    # if [ -f "$SCRIPT_DIR/api-gateway-lb.py" ]; then return; fi
     echo "--- Creating application source files for load-balanced setup ---"
 
     # Nginx config - pointing to the new frontend IP for the gateway
@@ -121,7 +130,17 @@ def wait_for_redis():
 
 @app.route('/products', methods=['GET'])
 def get_products():
-    instance_ip = os.popen('ip addr show eth0').read().split("inet ")[1].split("/")[0]
+    instance_ip = "N/A"
+    try:
+
+        # robustly find the global IP (first non-loopback)
+        with os.popen('ip -4 addr show scope global') as f:
+            for line in f:
+                if "inet " in line:
+                    instance_ip = line.strip().split()[1].split('/')[0]
+                    break
+    except Exception:
+        pass
     return jsonify({"products": list(PRODUCTS.values()), "served_by": instance_ip})
 
 if __name__ == '__main__':
@@ -201,13 +220,13 @@ start_services() {
     sleep 3
 
     echo "Starting application services..."
-    sudo ip netns exec api-gateway "$PYTHON_CMD" "$SCRIPT_DIR/api-gateway-lb.py" > /tmp/api-gateway-lb.log 2>&1 &
-    sudo ip netns exec order-service "$PYTHON_CMD" "$SCRIPT_DIR/order-service.py" > /tmp/order-service.log 2>&1 &
+    (sudo ip netns exec api-gateway nohup "$PYTHON_CMD" "$SCRIPT_DIR/api-gateway-lb.py" > /tmp/api-gateway-lb.log 2>&1 &)
+    (sudo ip netns exec order-service nohup "$PYTHON_CMD" "$SCRIPT_DIR/order-service.py" > /tmp/order-service.log 2>&1 &)
     
     echo "Starting Product Service replicas..."
-    sudo ip netns exec product-service-1 "$PYTHON_CMD" "$SCRIPT_DIR/product-service.py" > /tmp/product-service-1.log 2>&1 &
-    sudo ip netns exec product-service-2 "$PYTHON_CMD" "$SCRIPT_DIR/product-service.py" > /tmp/product-service-2.log 2>&1 &
-    sudo ip netns exec product-service-3 "$PYTHON_CMD" "$SCRIPT_DIR/product-service.py" > /tmp/product-service-3.log 2>&1 &
+    (sudo ip netns exec product-service-1 nohup "$PYTHON_CMD" "$SCRIPT_DIR/product-service.py" > /tmp/product-service-1.log 2>&1 &)
+    (sudo ip netns exec product-service-2 nohup "$PYTHON_CMD" "$SCRIPT_DIR/product-service.py" > /tmp/product-service-2.log 2>&1 &)
+    (sudo ip netns exec product-service-3 nohup "$PYTHON_CMD" "$SCRIPT_DIR/product-service.py" > /tmp/product-service-3.log 2>&1 &)
 
     echo ""
     echo "✅ All services started."
@@ -239,7 +258,7 @@ import requests, time, sys
 
 # These are the IPs for the NEW segmented network
 SERVICES = {
-    'nginx-lb': 'http://172.20.0.10:80',
+    'nginx-lb': 'http://172.20.0.10:80/health',
     'api-gateway-lb': 'http://172.20.0.20:3000/health',
     'product-service-1': 'http://172.21.0.30:5000/products', # product service doesn't have /health
     'product-service-2': 'http://172.21.0.31:5000/products',
@@ -258,7 +277,7 @@ for service, url in SERVICES.items():
             res = requests.get(url, timeout=2)
         
         # A 400 Bad Request on /orders is OK, it means the service is up.
-        if res.status_code in [200, 400]:
+        if res.status_code in [200, 201, 400]:
             print(f"✅ {service:20s} UP   (latency: {res.elapsed.total_seconds()*1000:.2f}ms)")
         else:
             all_ok = False

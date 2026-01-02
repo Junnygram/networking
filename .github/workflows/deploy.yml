@@ -67,6 +67,7 @@ jobs:
           for SERVICE in $(echo '${{ steps.changed.outputs.services }}' | jq -r '.[]'); do
             docker buildx build --push \
               -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$SERVICE:$TAG \
+              -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$SERVICE:latest \
               $SERVICES_BASE_PATH/$SERVICE
           done
 
@@ -81,18 +82,41 @@ jobs:
       - name: Read EC2 IP
         run: echo "EC2_PUBLIC_IP=$(cat /tmp/instance_public_ip.txt)" >> $GITHUB_ENV
 
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@master
+      - name: ECR Login Password
+        run: |
+          echo "ECR_PASSWORD=$(aws ecr get-login-password --region ${{ env.AWS_REGION }})" >> $GITHUB_ENV
+          echo "ECR_REGISTRY=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com" >> $GITHUB_ENV
+
+      - name: Copy Docker Compose file to EC2
+        uses: appleboy/scp-action@master
         with:
           host: ${{ env.EC2_PUBLIC_IP }}
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "bonus/5-cicd-pipeline/docker-compose.yml"
+          target: "/home/ubuntu"
+          strip_components: 2
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@master
+        env:
+          ECR_PASSWORD: ${{ env.ECR_PASSWORD }}
+          ECR_REGISTRY: ${{ env.ECR_REGISTRY }}
+          VISUALIZER_UI_IMAGE_URI: ${{ env.ECR_REGISTRY }}/visualizer-ui:latest
+          NETWORK_API_IMAGE_URI: ${{ env.ECR_REGISTRY }}/network-api:latest
+        with:
+          host: ${{ env.EC2_PUBLIC_IP }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: ECR_PASSWORD,ECR_REGISTRY,VISUALIZER_UI_IMAGE_URI,NETWORK_API_IMAGE_URI
           script: |
-            cd bonus/5-cicd-pipeline
+            # Login to ECR
+            echo $ECR_PASSWORD | docker login --username AWS --password-stdin $ECR_REGISTRY
 
-            aws ecr get-login-password --region us-east-1 \
-              | docker login --username AWS --password-stdin \
-                $AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
+            # Export vars for docker-compose
+            export VISUALIZER_UI_IMAGE_URI=$VISUALIZER_UI_IMAGE_URI
+            export NETWORK_API_IMAGE_URI=$NETWORK_API_IMAGE_URI
 
+            # Deploy
             docker-compose pull
             docker-compose up -d --remove-orphans

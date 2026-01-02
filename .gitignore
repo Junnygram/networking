@@ -5,11 +5,24 @@
 # Ignore Terraform plan files
 *.tfplan
 
-# Ignore Terraf
-orm variable files
+# Ignore Terraform variable files
 *.tfvars
 
 # Ignore crash log files
 crash.log
 
+# Ignore .terraform directories
+.terraform/
 
+# Ignore .tfplan files
+*.tfplan
+
+# Ignore .tfvars files
+*.tfvars
+
+# Ignore .tfstate files
+*.tfstate
+*.tfstate.backup
+
+# Ignore .terraform.lock.hcl files
+.terraform.lock.hcl

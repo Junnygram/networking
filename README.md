@@ -75,41 +75,71 @@ We create a **virtual Ethernet pair (veth pair)**, which acts like a virtual pat
 
 The bridge acts as a virtual switch. All containers connected to it can now talk to each other. For the containers to talk to the internet, we add an IP address to the bridge and create a firewall rule (`iptables`) on the host to "masquerade" (or NAT) the traffic from the containers.
 
-<!-- *(Image placeholder: A final diagram showing two namespaces connected by veth pairs to a virtual bridge on the host, which then connects out via the host's eth0)* -->
-
 ---
-<!-- 
-## Going Deeper: Real-World Container Networking
 
-The model above is the foundation. Real-world systems like Docker and Kubernetes build on it to provide robust, multi-host networking.
+## Assignments Summary
 
-### The Bridge in Detail: NAT and DNS
+This repository contains a series of assignments that build upon the concepts of container networking, from the fundamentals of network namespaces to advanced topics like network segmentation and load balancing.
 
-- **NAT/Masquerading:** For a container to reach the internet, its private IP address (e.g., `172.17.0.2`) must be translated to the host's public IP. This is done using Network Address Translation (NAT) via an `iptables` rule on the host. Docker adds a rule to the `POSTROUTING` chain in the `nat` table.
+### Assignment 1: The Basics
 
-  ```bash
-  # This rule tells the kernel to "masquerade" traffic from the container subnet
-  # It replaces the container's source IP with the host's IP for outgoing packets.
-  iptables -t nat -A POSTROUTING -s 172.17.0.0/16 ! -o docker0 -j MASQUERADE
-  ```
+This assignment focuses on the fundamentals of network namespaces and virtual network interfaces. You'll learn how to:
 
-- **DNS Resolution:** How does `ping google.com` work from inside a container? Docker maintains a DNS resolver for containers and automatically provides a custom `/etc/resolv.conf` file inside each container that points to it. This embedded DNS server resolves service names for container-to-container communication and forwards external queries (like `google.com`) to the host's configured DNS servers.
+*   Create and manage network namespaces.
+*   Create a virtual bridge and connect namespaces to it using `veth` pairs.
+*   Configure IP addresses and routing within namespaces.
+*   Enable internet access for namespaces using `iptables` and NAT.
 
-### Beyond the Bridge: Other Network Drivers
+### Assignment 2: Running Services
 
-- **Host Networking (`--net=host`):** This mode disables network isolation entirely. The container shares the host's network namespace.
-  - **Pros:** Maximum network performance, as there's no bridging or NAT. Useful for applications that need to manage host network interfaces directly.
-  - **Cons:** Zero isolation. A container can access (and conflict with) all of the host's network services.
+This assignment builds on the first by running a multi-service application within the network namespaces. You'll learn how to:
 
-- **Overlay Networking (The Key to Multi-Host):** How do containers on different hosts talk to each other as if they were on the same network? This is solved with **overlay networks**.
-  - **How it works:** An overlay network creates a virtual network that spans multiple hosts. When a container on Host A sends a packet to a container on Host B, the packet is encapsulated (wrapped) inside another packet. The most common encapsulation protocol is **VXLAN (Virtual Extensible LAN)**.
-  - The VXLAN packet is addressed to Host B's physical IP address. When it arrives, Host B's kernel unwraps it and forwards the original packet to the destination container.
-  - This allows for seamless, private communication between containers across a cluster, forming the basis of networking in Docker Swarm and Kubernetes.
+*   Run a simple web server (Nginx) in a namespace.
+*   Run a Python Flask application (API gateway) in a namespace.
+*   Run a database (Redis) in a namespace.
+*   Enable communication between the services.
 
-### Service Discovery and Load Balancing
+### Assignment 3: Monitoring and Debugging
 
-In a distributed system, you don't care about a container's IP address; you care about the *service* it provides.
+This assignment focuses on the tools and techniques used to monitor and debug a containerized network. You'll learn how to:
 
-- **Service Discovery:** Orchestrators like Docker Swarm and Kubernetes provide built-in DNS. You can have a `backend` service with 3 replicas. Any container in the network can simply connect to the hostname `backend`, and the orchestrator's DNS will resolve it to the IP of a healthy container for that service.
+*   Use `tcpdump` to capture and analyze network traffic.
+*   Use `ss` and `conntrack` to inspect connections.
+*   Create a simple health monitoring script.
 
-- **Ingress Load Balancing:** How is traffic from the outside world distributed to your services? Docker Swarm uses an **Ingress Routing Mesh**. When you publish a port for a service (e.g., port `8080`), that port is opened on *every node in the swarm*. When traffic hits port `8080` on *any* node—even one not running the service—the routing mesh automatically routes the traffic to a healthy container for that service, providing built-in load balancing. This is achieved with `IPVS` (IP Virtual Server) from the Linux Kernel. -->
+### Assignment 4: Advanced Networking
+
+This assignment introduces more advanced networking concepts, including service discovery, load balancing, and network security policies. It's split into two parts:
+
+*   **Part A:** Enhancing the original flat network with a service registry and `iptables` security policies.
+*   **Part B:** Building a new, segmented architecture with separate networks for the frontend, backend, and database tiers, and implementing round-robin load balancing for the product service.
+
+### Assignment 5: Docker Migration and Optimization
+
+This assignment focuses on migrating the application from a manual setup to Docker. You'll learn how to:
+
+*   Containerize the services using Dockerfiles.
+*   Use Docker Compose to manage the application stack.
+*   Benchmark the performance of the Dockerized application.
+
+### Assignment 6: Multi-Host Networking
+
+This assignment introduces multi-host networking with Docker Swarm. You'll learn how to:
+
+*   Create a Docker Swarm cluster.
+*   Use overlay networks to enable communication between containers on different hosts.
+*   Deploy a distributed application to the swarm.
+
+### Assignment 7: Documentation and Presentation
+
+This assignment focuses on documenting the entire project and preparing a presentation.
+
+### Bonus Assignments
+
+The bonus assignments cover a range of advanced topics, including:
+
+*   Service mesh with Envoy.
+*   Distributed tracing with Jaeger.
+*   Chaos engineering.
+*   Auto-scaling.
+*   CI/CD pipelines.
