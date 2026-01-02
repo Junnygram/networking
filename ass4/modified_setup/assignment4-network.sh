@@ -101,11 +101,15 @@ cleanup() {
 
 # --- Function to flush all iptables rules ---
 flush_iptables() {
-    echo "--- Flushing all iptables FORWARD rules and setting policy to ACCEPT ---"
+    echo "--- Flushing all iptables rules and setting policy to ACCEPT ---"
     if command -v iptables >/dev/null; then
+        # Flush FORWARD chain for inter-container traffic
         sudo iptables -P FORWARD ACCEPT 2>/dev/null || true
         sudo iptables -F FORWARD 2>/dev/null || true
-        echo "✅ iptables FORWARD chain flushed."
+        # Flush INPUT chain for container-to-host traffic (for PostgreSQL)
+        sudo iptables -P INPUT ACCEPT 2>/dev/null || true
+        sudo iptables -F INPUT 2>/dev/null || true
+        echo "✅ iptables FORWARD and INPUT chains flushed."
     else
         echo "iptables command not found, skipping flush."
     fi
