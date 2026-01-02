@@ -7,6 +7,10 @@ on:
     paths:
       - bonus/5-cicd-pipeline/apps/**
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Infrastructure Management (Terraform)"]
+    types:
+      - completed
 
 env:
   SERVICES_BASE_PATH: bonus/5-cicd-pipeline/apps
