@@ -63,3 +63,19 @@ The workflow will:
 6.  Run `docker-compose pull` and `docker-compose up -d` to pull the new image and restart the services.
 
 After the workflow completes, visit the public IP address of your EC2 instance. You will see the frontend, which can fetch messages from the backend, demonstrating a complete, containerized microservices deployment.
+
+---
+
+## Project Screenshots
+
+<!-- ### 1. Infrastructure Provisioning & Deployment -->
+![Infrastructure Setup](images/1.png)
+
+<!-- ### 2. CI/CD Pipeline Execution -->
+![Pipeline Execution](images/2.png)
+
+<!-- ### 3. Application Metrics / Logs -->
+![Metrics](images/3.png)
+
+<!-- ### 4. Live Application -->
+![Live Application](images/4.png)
