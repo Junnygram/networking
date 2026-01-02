@@ -271,7 +271,7 @@ for service, url in SERVICES.items():
             res = requests.get(url, timeout=2)
         
         # A 400 Bad Request on /orders is OK, it means the service is up.
-        if res.status_code in [200, 400]:
+        if res.status_code in [200, 201, 400]:
             print(f"✅ {service:20s} UP   (latency: {res.elapsed.total_seconds()*1000:.2f}ms)")
         else:
             all_ok = False

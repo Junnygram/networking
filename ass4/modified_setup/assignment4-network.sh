@@ -129,11 +129,39 @@ setup() {
     echo "--- Configuring host PostgreSQL server ---"
     
     # Overwrite config files to allow connections from the container networks
-    cat <<EOF > /etc/postgresql/16/main/postgresql.conf
+    # Detect Postgres version and config directory
+    PG_CONF_DIR=$(ls -d /etc/postgresql/*/main | head -n 1)
+    if [ -z "$PG_CONF_DIR" ]; then
+        echo "Could not detect PostgreSQL configuration directory."
+        exit 1
+    fi
+    echo "Detected PostgreSQL configuration in: $PG_CONF_DIR"
+
+    # Backup original config if not already backed up
+    if [ ! -f "$PG_CONF_DIR/postgresql.conf.orig" ]; then
+        cp "$PG_CONF_DIR/postgresql.conf" "$PG_CONF_DIR/postgresql.conf.orig"
+    fi
+
+    # Check if original config is corrupted (too small or contains 'include postgresql.conf.orig')
+    if grep -q "include 'postgresql.conf.orig'" "$PG_CONF_DIR/postgresql.conf.orig" || [ $(stat -c%s "$PG_CONF_DIR/postgresql.conf.orig") -lt 100 ]; then
+        echo "⚠️  Detected corrupted backup config. Attempting to restore from sample..."
+        PG_VER=$(basename $(dirname $(dirname $PG_CONF_DIR)))
+        SAMPLE_CONF="/usr/share/postgresql/$PG_VER/postgresql.conf.sample"
+        if [ -f "$SAMPLE_CONF" ]; then
+             cp "$SAMPLE_CONF" "$PG_CONF_DIR/postgresql.conf.orig"
+             echo "✅ Restored postgresql.conf.orig from sample."
+        else
+             echo "❌ Could not find sample config at $SAMPLE_CONF. Please reinstall postgresql."
+             exit 1
+        fi
+    fi
+
+    # Overwrite config files to allow connections from the container networks
+    cat <<EOF > "$PG_CONF_DIR/postgresql.conf"
 include 'postgresql.conf.orig'
 listen_addresses = '*'
 EOF
-    cat <<EOF > /etc/postgresql/16/main/pg_hba.conf
+    cat <<EOF > "$PG_CONF_DIR/pg_hba.conf"
 # Allow md5 password auth for all network connections from any source
 host    all             all             0.0.0.0/0               md5
 # Allow local connections for admin tasks
@@ -146,8 +174,12 @@ EOF
 
     # Create the user and database
     echo "Creating database user and 'orders' database..."
-    sudo -u postgres psql -c "CREATE USER postgres WITH PASSWORD 'postgres'" || echo "User 'postgres' already exists or could not be created."
+    # Ensure password is set correctly even if user exists
+    sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres'"
     sudo -u postgres psql -c "CREATE DATABASE orders" || echo "Database 'orders' already exists or could not be created."
+    
+    echo "Creating 'orders' table..."
+    sudo -u postgres psql -d orders -c "CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, data JSONB);"
 
 
     echo "--- Building segmented network infrastructure ---"
@@ -202,6 +234,12 @@ EOF
         if [ "$net_suffix" == "backend" ]; then
             echo "Adding route to database network for $ns..."
             sudo ip netns exec "$ns" ip route add 172.22.0.0/24 via "${NS_IP_MAP[backend-db-router-backend]%%/*}"
+        fi
+
+        # If it's the redis service (database network), add a return route to backend network via router
+        if [ "$ns" == "redis-cache" ]; then
+             echo "Adding return route to backend network for $ns..."
+             sudo ip netns exec "$ns" ip route add 172.21.0.0/24 via "${NS_IP_MAP[backend-db-router-database]%%/*}"
         fi
     done
 
