@@ -132,5 +132,5 @@ jobs:
             export NETWORK_API_IMAGE_URI=$NETWORK_API_IMAGE_URI
 
             # Deploy
-            docker-compose pull
-            docker-compose up -d --remove-orphans
+            docker compose pull
+            docker compose up -d --remove-orphans
