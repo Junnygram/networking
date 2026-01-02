@@ -7,6 +7,15 @@ on:
     paths:
       - bonus/5-cicd-pipeline/terraform/**
   workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+        - apply
+        - destroy
 
 env:
   AWS_REGION: us-east-1
@@ -51,21 +60,21 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
-      - name: Terraform Apply (auto on push)
-        if: github.event_name == 'push'
+      - name: Terraform Apply
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
         run: terraform apply -auto-approve
 
       - name: Save EC2 Public IP
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
         run: terraform output -raw instance_public_ip > instance_public_ip.txt
 
       - name: Upload EC2 IP Artifact
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
         uses: actions/upload-artifact@v4
         with:
           name: ec2-instance-ip
           path: bonus/5-cicd-pipeline/terraform/instance_public_ip.txt
 
       - name: Terraform Destroy (manual kill switch)
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
         run: terraform destroy -auto-approve
