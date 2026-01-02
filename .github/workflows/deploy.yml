@@ -37,8 +37,31 @@ jobs:
       - name: Get AWS Account ID
         run: echo "AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_ENV
 
+      - name: Download EC2 IP from infra workflow
+        id: download_ip
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: infra.yml
+          workflow_conclusion: success
+          name: ec2-instance-ip
+          path: /tmp
+          if_no_artifact_found: ignore
+
+      - name: Verify Deployment Target
+        id: verify
+        run: |
+          if [ -f /tmp/instance_public_ip.txt ]; then
+            echo "IP found. Proceeding with deployment."
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "EC2_PUBLIC_IP=$(cat /tmp/instance_public_ip.txt)" >> $GITHUB_ENV
+          else
+            echo "No IP artifact found. This was likely a 'Destroy' run or failed provision. Skipping deployment."
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Detect changed services
         id: changed
+        if: steps.verify.outputs.should_deploy == 'true'
         run: |
           if [ "${{ github.event_name }}" == "push" ]; then
             CHANGED_FILES=$(git diff --name-only HEAD~1)
@@ -65,17 +88,17 @@ jobs:
           echo "services=$JSON_SERVICES" >> $GITHUB_OUTPUT
 
       - name: Log in to Amazon ECR
-        if: steps.changed.outputs.changed == 'true'
+        if: steps.verify.outputs.should_deploy == 'true' && steps.changed.outputs.changed == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
 
       - name: Set up Docker Buildx
-        if: steps.changed.outputs.changed == 'true'
+        if: steps.verify.outputs.should_deploy == 'true' && steps.changed.outputs.changed == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push images
-        if: steps.changed.outputs.changed == 'true'
+        if: steps.verify.outputs.should_deploy == 'true' && steps.changed.outputs.changed == 'true'
         run: |
           TAG=$(git rev-parse --short HEAD)
           for SERVICE in $(echo '${{ steps.changed.outputs.services }}' | jq -r '.[]'); do
@@ -85,23 +108,14 @@ jobs:
               $SERVICES_BASE_PATH/$SERVICE
           done
 
-      - name: Download EC2 IP from infra workflow
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          workflow: infra.yml
-          workflow_conclusion: success
-          name: ec2-instance-ip
-          path: /tmp
-
-      - name: Read EC2 IP
-        run: echo "EC2_PUBLIC_IP=$(cat /tmp/instance_public_ip.txt)" >> $GITHUB_ENV
-
       - name: ECR Login Password
+        if: steps.verify.outputs.should_deploy == 'true'
         run: |
           echo "ECR_PASSWORD=$(aws ecr get-login-password --region ${{ env.AWS_REGION }})" >> $GITHUB_ENV
           echo "ECR_REGISTRY=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com" >> $GITHUB_ENV
 
       - name: Copy Docker Compose file to EC2
+        if: steps.verify.outputs.should_deploy == 'true'
         uses: appleboy/scp-action@master
         with:
           host: ${{ env.EC2_PUBLIC_IP }}
@@ -112,6 +126,7 @@ jobs:
           strip_components: 2
 
       - name: Deploy to EC2
+        if: steps.verify.outputs.should_deploy == 'true'
         uses: appleboy/ssh-action@master
         env:
           ECR_PASSWORD: ${{ env.ECR_PASSWORD }}
@@ -131,6 +146,24 @@ jobs:
             export VISUALIZER_UI_IMAGE_URI=$VISUALIZER_UI_IMAGE_URI
             export NETWORK_API_IMAGE_URI=$NETWORK_API_IMAGE_URI
 
-            # Deploy
-            docker compose pull
-            docker compose up -d --remove-orphans
+            # Wait for Docker Compose to be ready (User Data script might still be running)
+            echo "Waiting for Docker Compose to be installed..."
+            for i in {1..30}; do
+                if command -v docker-compose &> /dev/null; then
+                    echo "Docker Compose detected!"
+                    break
+                fi
+                echo "Waiting for Docker Compose... ($i/30)"
+                sleep 10
+            done
+
+            # Deploy using the detected command
+            if command -v docker-compose &> /dev/null; then
+                docker-compose pull
+                docker-compose up -d --remove-orphans
+            else
+                # Fallback to docker compose plugin if standalone not found after wait
+                echo "Standalone docker-compose not found, trying 'docker compose'..."
+                docker compose pull
+                docker compose up -d --remove-orphans
+            fi
