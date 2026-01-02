@@ -41,7 +41,8 @@ ensure_python_venv() {
 
 # --- Create all application files ---
 create_files() {
-    if [ -f "$SCRIPT_DIR/api-gateway-lb.py" ]; then return; fi
+    # Always recreate files to ensure latest version
+    # if [ -f "$SCRIPT_DIR/api-gateway-lb.py" ]; then return; fi
     echo "--- Creating application source files for load-balanced setup ---"
 
     # Nginx config - pointing to the new frontend IP for the gateway
@@ -131,9 +132,14 @@ def wait_for_redis():
 def get_products():
     instance_ip = "N/A"
     try:
-        instance_ip = os.popen('ip addr show eth0').read().split("inet ")[1].split("/")[0]
-    except IndexError:
-        # Fallback for when eth0 is not present or has no IP
+
+        # robustly find the global IP (first non-loopback)
+        with os.popen('ip -4 addr show scope global') as f:
+            for line in f:
+                if "inet " in line:
+                    instance_ip = line.strip().split()[1].split('/')[0]
+                    break
+    except Exception:
         pass
     return jsonify({"products": list(PRODUCTS.values()), "served_by": instance_ip})
 
