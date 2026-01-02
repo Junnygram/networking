@@ -78,7 +78,7 @@ jobs:
       - name: Download EC2 IP from infra workflow
         uses: dawidd6/action-download-artifact@v6
         with:
-          workflow: Infrastructure Management (Terraform)
+          workflow: infra.yml
           workflow_conclusion: success
           name: ec2-instance-ip
           path: /tmp
