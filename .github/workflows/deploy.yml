@@ -139,31 +139,29 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           envs: ECR_PASSWORD,ECR_REGISTRY,VISUALIZER_UI_IMAGE_URI,NETWORK_API_IMAGE_URI
           script: |
-            # Login to ECR
-            echo $ECR_PASSWORD | docker login --username AWS --password-stdin $ECR_REGISTRY
-
-            # Export vars for docker-compose
+            # Upload vars for docker-compose
             export VISUALIZER_UI_IMAGE_URI=$VISUALIZER_UI_IMAGE_URI
             export NETWORK_API_IMAGE_URI=$NETWORK_API_IMAGE_URI
 
-            # Wait for Docker Compose to be ready (User Data script might still be running)
-            echo "Waiting for Docker Compose to be installed..."
+            # Wait for Docker to be ready
+            echo "Waiting for Docker..."
             for i in {1..30}; do
-                if command -v docker-compose &> /dev/null; then
-                    echo "Docker Compose detected!"
+                if command -v docker &> /dev/null; then
+                    echo "Docker detected!"
                     break
                 fi
-                echo "Waiting for Docker Compose... ($i/30)"
+                echo "Waiting for Docker... ($i/30)"
                 sleep 10
             done
 
-            # Deploy using the detected command
+            # Login to ECR (using sudo)
+            echo $ECR_PASSWORD | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
+
+            # Deploy using sudo -E to preserve env vars
             if command -v docker-compose &> /dev/null; then
-                docker-compose pull
-                docker-compose up -d --remove-orphans
+                sudo -E docker-compose pull
+                sudo -E docker-compose up -d --remove-orphans
             else
-                # Fallback to docker compose plugin if standalone not found after wait
-                echo "Standalone docker-compose not found, trying 'docker compose'..."
-                docker compose pull
-                docker compose up -d --remove-orphans
+                sudo -E docker compose pull
+                sudo -E docker compose up -d --remove-orphans
             fi
