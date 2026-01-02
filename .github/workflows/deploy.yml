@@ -40,11 +40,17 @@ jobs:
       - name: Detect changed services
         id: changed
         run: |
-          CHANGED_FILES=$(git diff --name-only HEAD~1)
-          SERVICES=$(echo "$CHANGED_FILES" \
-            | grep "^${SERVICES_BASE_PATH}" \
-            | cut -d/ -f4 \
-            | sort -u)
+          if [ "${{ github.event_name }}" == "push" ]; then
+            CHANGED_FILES=$(git diff --name-only HEAD~1)
+            SERVICES=$(echo "$CHANGED_FILES" \
+              | grep "^${SERVICES_BASE_PATH}" \
+              | cut -d/ -f4 \
+              | sort -u)
+          else
+            # For manual runs (workflow_dispatch) or chained runs (workflow_run), build all services
+            echo "Non-push event detected. Building all services."
+            SERVICES=$(ls ${SERVICES_BASE_PATH})
+          fi
 
           if [ -z "$SERVICES" ]; then
             echo "changed=false" >> $GITHUB_OUTPUT
