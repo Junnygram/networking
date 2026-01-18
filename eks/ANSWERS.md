@@ -129,13 +129,13 @@ Pods with **lower PriorityClass values** are candidates for eviction. In our sce
 `
 
 ## Deliverables & Proof
-
 1.  **Screenshots (Already Captured):**
-    -   `images/1.png`
-    -   `images/2.png`
-    -   `images/3.png`
-    -   `images/4.png`
-    -   `images/5.png`
+    ![Screenshot 1](images/1.png)
+    ![Screenshot 2](images/2.png)
+    ![Screenshot 3](images/3.png)
+    ![Screenshot 4](images/4.png)
+    ![Screenshot 5](images/5.png)
+
 2.  **Files:** Ensure you have the following files ready for submission:
     -   `COMMANDS.md`
     -   `ANSWERS.md`
