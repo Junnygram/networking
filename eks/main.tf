@@ -32,6 +32,7 @@ module "vpc" {
 
 resource "aws_s3_bucket" "k8s_join_command" {
   bucket = "k8s-join-command-${random_id.id.hex}"
+  force_destroy = true
 }
 
 resource "random_id" "id" {

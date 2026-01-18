@@ -16,6 +16,11 @@ apt-get install -y kubelet kubeadm kubectl
 apt-mark hold kubelet kubeadm kubectl
 
 # Download join command from S3 and join the cluster
-aws s3 cp s3://${s3_bucket}/join-command.sh /home/ubuntu/join-command.sh
+echo "Waiting for join command to appear in S3..."
+while ! aws s3 cp s3://${s3_bucket}/join-command.sh /home/ubuntu/join-command.sh; do
+    echo "Join command not ready yet. Retrying in 10 seconds..."
+    sleep 10
+done
+
 chmod +x /home/ubuntu/join-command.sh
 /home/ubuntu/join-command.sh
