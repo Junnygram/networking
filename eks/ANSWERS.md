@@ -3,14 +3,14 @@
 ## Part 2: Deploy the Database Layer
 
 ### 1. On which node did the postgres pod get scheduled? Why?
-The Postgres pod was scheduled on node `ip-10-0-102-152` (Worker Node 2).
+The Postgres pod was scheduled on node `<WORKER_NODE_2_NAME>` (Worker Node 2).
 **Why:**
-1.  **Node Selector:** The deployment specifies `nodeSelector: tier: backend`. Node `ip-10-0-102-152` is labeled with `tier=backend`.
+1.  **Node Selector:** The deployment specifies `nodeSelector: tier: backend`. Node `<WORKER_NODE_2_NAME>` is labeled with `tier=backend`.
 2.  **Tolerations:** The node has a taint `workload=backend:NoSchedule`. The deployment includes a matching toleration, allowing it to be scheduled there despite the taint.
 
 ### 2. What happens if you remove the toleration? Test it and explain.
 If the toleration is removed, the pod will fail to schedule and remain in a **Pending** state.
-**Explanation:** The node `ip-10-0-102-152` has a taint `workload=backend:NoSchedule`. Kubernetes scheduler will filter out this node because the pod does not tolerate the taint. Since this is the only node that satisfies the `nodeSelector` (tier=backend), there are no valid nodes available for the pod.
+**Explanation:** The node `<WORKER_NODE_2_NAME>` has a taint `workload=backend:NoSchedule`. Kubernetes scheduler will filter out this node because the pod does not tolerate the taint. Since this is the only node that satisfies the `nodeSelector` (tier=backend), there are no valid nodes available for the pod.
 
 ### 3. Can you access the database from outside the cluster? Why or why not?
 **No**, you cannot access it from outside the cluster.
@@ -33,7 +33,7 @@ If changed to "preferred", the scheduler would *try* to place pods on different 
 ## Part 4: Deploy Backend API with Node Affinity
 
 ### 1. On which node(s) are the backend pods scheduled? Why?
-The backend pods are scheduled on node `ip-10-0-102-152` (Worker Node 2).
+The backend pods are scheduled on node `<WORKER_NODE_2_NAME>` (Worker Node 2).
 **Why:**
 -   **Required Affinity:** The deployment enforces `requiredDuringSchedulingIgnoredDuringExecution` for `tier: backend`. Only Worker Node 2 matches this label.
 -   **Preferred Affinity:** The deployment prefers `storage: ssd`. However, Worker Node 2 has `storage: hdd`.
@@ -52,7 +52,7 @@ The backend pods are scheduled on node `ip-10-0-102-152` (Worker Node 2).
 ## Part 5: Deploy Frontend with Multiple Replicas
 
 ### 1. Where are all the frontend pods scheduled? Why?
-All frontend pods are scheduled on node `ip-10-0-102-148` (Worker Node 1).
+All frontend pods are scheduled on node `<WORKER_NODE_1_NAME>` (Worker Node 1).
 **Why:** The deployment uses a **Node Selector** matching `tier: frontend`. Since only Worker Node 1 has this label, the scheduler forces all frontend pods onto this single node.
 
 ### 2. What happens if you try to scale to 10 replicas on a single node?
@@ -126,3 +126,19 @@ Pods with **lower PriorityClass values** are candidates for eviction. In our sce
 -   **Stability:** Priorities help ensure that critical workloads (like Frontend/Payment payments) stay running even during resource crunch, at the expense of non-critical workloads (like Batch jobs).
 
 
+`
+
+## Deliverables & Proof
+
+1.  **Screenshots (Already Captured):**
+    -   `images/1.png`
+    -   `images/2.png`
+    -   `images/3.png`
+    -   `images/4.png`
+    -   `images/5.png`
+2.  **Files:** Ensure you have the following files ready for submission:
+    -   `COMMANDS.md`
+    -   `ANSWERS.md`
+    -   `DEPLOYMENT.md`
+    -   `manifests/` directory
+    -   `images/` directory containing the screenshots above.

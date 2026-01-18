@@ -142,7 +142,7 @@ kubectl apply -f manifests/priority/frontend-priority.yaml
 # Stress Test
 kubectl scale deployment batch-processor --replicas=10
 kubectl scale deployment frontend --replicas=8
-```
+``
 
 ## Cleanup
 
