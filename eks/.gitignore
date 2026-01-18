@@ -1,0 +1,10 @@
+# Terraform state files
+.terraform
+terraform.tfstate
+terraform.tfstate.backup
+
+# Sensitive files
+k8s-key
+k8s-key.pub
+kubeconfig
+terraform.tfvars
