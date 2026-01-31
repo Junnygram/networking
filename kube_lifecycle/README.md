@@ -13,7 +13,7 @@ Open a [Killercoda Kubernetes Playground](https://killercoda.com/playgrounds/sce
 
 ```bash
 # Clone the repository
-git clone https://github.com/junioroyewunmi/networking.git
+git clone https://github.com/Junnygram/networking.git
 cd networking
 git checkout kube_lifecycle
 
