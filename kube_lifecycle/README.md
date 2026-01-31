@@ -14,14 +14,14 @@ Open a [Killercoda Kubernetes Playground](https://killercoda.com/playgrounds/sce
 ```bash
 # Clone the repository
 git clone https://github.com/Junnygram/networking.git
-cd networking s
+cd networking
 git checkout kube_lifecycle
 
 # Go to the assignment directory
 cd kube_lifecycle
 ```
 
-### 2. Deploy Application
+### 2. Deploy Application (Manual Manifests)
 Apply the manifests in the following order:
 
 ```bash
@@ -105,7 +105,7 @@ chmod +x tests/verify.sh
 1.  **Trigger Update**:
     Simulate a new image release by updating an environment variable.
     ```bash
-    kubectl set env deployment/product-service -n kube-lifecycle UPDATE_DATE=$(date)
+    kubectl set env deployment/product-service -n kube-lifecycle "UPDATE_DATE=$(date)"
     ```
 
 2.  **Watch Rollout**:
@@ -116,9 +116,40 @@ chmod +x tests/verify.sh
 
 ---
 
-## 📦 Helm Chart
-Alternatively, you can deploy the entire stack using Helm.
+## 📦 Helm Chart Deployment
+Alternatively, you can deploy the entire stack using Helm. 
+*Note: If you already deployed manually, run `kubectl delete ns kube-lifecycle` first to clean up.*
 
+### 1. Install
 ```bash
 helm install shop ./helm/ecommerce-stack -n kube-lifecycle --create-namespace
 ```
+
+### 2. Verify
+```bash
+kubectl get pods -n kube-lifecycle
+# OR use the script
+./tests/verify.sh
+```
+
+### 3. Upgrade (Simulate Config Change)
+Change the configuration (e.g., scale frontend to 5 replicas) and apply instantly.
+```bash
+helm upgrade shop ./helm/ecommerce-stack -n kube-lifecycle --set frontend.replicaCount=5
+```
+*Verify: `kubectl get deployment frontend-v1 -n kube-lifecycle`*
+
+### 4. Cleanup
+```bash
+helm uninstall shop -n kube-lifecycle
+```
+
+---
+
+## 📸 Screenshots
+
+### Deployment Diagram
+![Screenshot](docs/images/11.png)
+
+### Demo Evidence
+![Demo Screenshot](docs/images/12.png.png)
