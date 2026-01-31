@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-v2
+  namespace: kube-lifecycle
+  labels:
+    app: frontend
+    version: v2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+      version: v2
+  template:
+    metadata:
+      labels:
+        app: frontend
+        version: v2
+    spec:
+      containers:
+      - name: frontend
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: html-volume
+          mountPath: /usr/share/nginx/html
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        startupProbe:
+          httpGet:
+            path: /
+            port: 80
+          failureThreshold: 30
+          periodSeconds: 5
+      volumes:
+      - name: html-volume
+        configMap:
+          name: frontend-config-v2

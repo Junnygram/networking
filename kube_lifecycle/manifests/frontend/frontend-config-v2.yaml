@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config-v2
+  namespace: kube-lifecycle
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Kube Lifecycle Demo</title>
+        <style>
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+                color: white;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                margin: 0;
+            }
+            .container {
+                background: rgba(255, 255, 255, 0.1);
+                backdrop-filter: blur(10px);
+                padding: 40px;
+                border-radius: 20px;
+                box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+                text-align: center;
+                border: 1px solid rgba(255, 255, 255, 0.18);
+            }
+            h1 { font-size: 3em; margin-bottom: 0.5em; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+            p { font-size: 1.2em; opacity: 0.9; }
+            .version {
+                display: inline-block;
+                padding: 5px 15px;
+                background: #ff9f43; /* Canary Orange */
+                border-radius: 50px;
+                margin-top: 20px;
+                font-weight: bold;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>E-Commerce Platform</h1>
+            <p>You are viewing the CANARY version of the application.</p>
+            <div class="version">Version: V2 (Canary)</div>
+        </div>
+    </body>
+    </html>

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: kube-lifecycle
+data:
+  PRODUCT_SERVICE_URL: "http://product-service.kube-lifecycle.svc.cluster.local"
+  ORDER_SERVICE_URL: "http://order-service.kube-lifecycle.svc.cluster.local"
+  ENABLE_FEATURE_X: "true"
+  UI_THEME: "dark"

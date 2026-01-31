@@ -1,0 +1,38 @@
+# Default values for ecommerce-stack.
+
+global:
+  namespace: kube-lifecycle
+
+frontend:
+  replicaCount: 3
+  image:
+    repository: nginx
+    tag: alpine
+  service:
+    type: ClusterIP
+    port: 80
+  hpa:
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPU: 50
+
+apiGateway:
+  replicaCount: 2
+  image:
+    repository: nginx
+    tag: alpine
+  service:
+    type: LoadBalancer
+    port: 80
+
+backend:
+  productService:
+    replicaCount: 2
+    image: kennethreitz/httpbin
+  orderService:
+    replicaCount: 2
+    image: kennethreitz/httpbin
+
+config:
+  enableFeatureX: "true"
+  uiTheme: "dark"
