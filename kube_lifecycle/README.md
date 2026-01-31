@@ -152,4 +152,4 @@ helm uninstall shop -n kube-lifecycle
 ![Screenshot](docs/images/11.png)
 
 ### Demo Evidence
-![Demo Screenshot](docs/images/12.png.png)
+![Demo Screenshot](docs/images/12.png)
