@@ -14,6 +14,16 @@ The original files had inconsistencies between what the article/README documente
 
 ## Changes Made
 
+### 6. `05-access-modes/02-rwx-demo.yaml`
+
+**What changed:**
+- Increased `nfs-server` container memory `limits` from `128Mi` to `256Mi`.
+
+**Why:**
+- The `nfs-server` pod was consistently getting `OOMKilled` (Out Of Memory) with the original `128Mi` memory limit, preventing the RWX demo from functioning. Increasing the limit provides more stability.
+
+---
+
 ### 1. `03-dynamic-provisioning/02-dynamic-pvc.yaml`
 
 **What changed:**
