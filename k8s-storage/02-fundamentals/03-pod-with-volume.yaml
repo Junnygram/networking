@@ -1,0 +1,48 @@
+# Pod Using a Persistent Volume Claim
+#
+# Key concepts:
+# - volumes: Define which PVCs to use
+# - volumeMounts: Mount volumes into containers at specific paths
+#
+# The lifecycle:
+# 1. Pod references PVC in spec.volumes
+# 2. Kubernetes finds the bound PV
+# 3. Volume is mounted into the container
+# 4. Data persists even if pod is deleted (until PVC is deleted)
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: static-pod-demo
+  labels:
+    purpose: demo
+spec:
+  containers:
+    - name: demo-container
+      image: busybox:1.36
+      command: ["sleep", "infinity"]
+
+      # Mount the PVC into the container
+      volumeMounts:
+        - name: demo-storage
+          mountPath: /data  # Data will be accessible at /data inside container
+
+      # Resource limits (good practice)
+      resources:
+        limits:
+          memory: "64Mi"
+          cpu: "100m"
+        requests:
+          memory: "32Mi"
+          cpu: "50m"
+
+  # Define volumes - reference the PVC
+  volumes:
+    - name: demo-storage
+      persistentVolumeClaim:
+        claimName: static-pvc-demo  # Must match PVC name
+
+  # Ensure pod runs on a node where the PV is available
+  # For hostPath PVs, this is important!
+  # nodeSelector:
+  #   kubernetes.io/hostname: storage-lab-worker

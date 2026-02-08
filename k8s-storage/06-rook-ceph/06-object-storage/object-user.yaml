@@ -1,0 +1,55 @@
+# CephObjectStoreUser - S3 credentials
+#
+# Creates a user with access keys for the object store.
+# Credentials are stored in a Kubernetes Secret.
+
+apiVersion: ceph.rook.io/v1
+kind: CephObjectStoreUser
+metadata:
+  name: my-user
+  namespace: rook-ceph
+spec:
+  # Which object store this user belongs to
+  store: my-store
+
+  # Display name for the user
+  displayName: "My S3 User"
+
+  # Optional: Quota limits
+  # quotas:
+  #   maxBuckets: 10
+  #   maxSize: 10G
+  #   maxObjects: 1000000
+
+  # Optional: Capabilities (advanced)
+  # capabilities:
+  #   user: "*"
+  #   bucket: "*"
+
+# After applying, get credentials:
+#
+# kubectl -n rook-ceph get secret rook-ceph-object-user-my-store-my-user -o yaml
+#
+# Or extract specific keys:
+#
+# ACCESS_KEY=$(kubectl -n rook-ceph get secret rook-ceph-object-user-my-store-my-user \
+#   -o jsonpath='{.data.AccessKey}' | base64 -d)
+# SECRET_KEY=$(kubectl -n rook-ceph get secret rook-ceph-object-user-my-store-my-user \
+#   -o jsonpath='{.data.SecretKey}' | base64 -d)
+
+---
+# Admin user with full capabilities
+apiVersion: ceph.rook.io/v1
+kind: CephObjectStoreUser
+metadata:
+  name: admin-user
+  namespace: rook-ceph
+spec:
+  store: my-store
+  displayName: "Admin User"
+  capabilities:
+    user: "*"
+    bucket: "*"
+    metadata: "*"
+    usage: "*"
+    zone: "*"

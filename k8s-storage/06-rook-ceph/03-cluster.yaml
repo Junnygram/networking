@@ -1,0 +1,214 @@
+# CephCluster Custom Resource
+#
+# This defines the Ceph cluster configuration that Rook will manage.
+# Customize this based on your environment.
+#
+# Key decisions:
+# - mon.count: Number of monitors (3 for production, 1 for testing)
+# - storage.useAllNodes: Auto-discover storage on all nodes
+# - storage.useAllDevices: Use all raw devices found
+# - storage.deviceFilter: Regex to match specific devices
+
+apiVersion: ceph.rook.io/v1
+kind: CephCluster
+metadata:
+  name: rook-ceph
+  namespace: rook-ceph
+spec:
+  # Ceph version to deploy
+  cephVersion:
+    image: quay.io/ceph/ceph:v18.2.2
+    allowUnsupported: false
+
+  # Data directory on the host
+  dataDirHostPath: /var/lib/rook
+
+  # Skip upgrade checks (set false for production)
+  skipUpgradeChecks: false
+
+  # Continue if host networking check fails
+  continueUpgradeAfterChecksEvenIfNotHealthy: false
+
+  # Wait for clean PGs before upgrade
+  waitTimeoutForHealthyOSDInMinutes: 10
+
+  # Monitor configuration
+  mon:
+    count: 3                    # 3 for quorum (production), 1 for testing
+    allowMultiplePerNode: false # Set true only for testing
+
+  # Manager configuration
+  mgr:
+    count: 2                    # 2 for HA
+    allowMultiplePerNode: false
+    modules:
+      - name: pg_autoscaler
+        enabled: true
+      - name: rook
+        enabled: true
+
+  # Dashboard settings
+  dashboard:
+    enabled: true
+    ssl: true
+
+  # Monitoring (Prometheus)
+  monitoring:
+    enabled: false  # Set true if you have Prometheus operator installed
+
+  # Network settings
+  network:
+    connections:
+      encryption:
+        enabled: false
+      compression:
+        enabled: false
+      requireMsgr2: false
+
+  # Crash collector
+  crashCollector:
+    disable: false
+
+  # Log collector
+  logCollector:
+    enabled: true
+    periodicity: daily
+    maxLogSize: 500M
+
+  # Cleanup policy (what happens when cluster is deleted)
+  cleanupPolicy:
+    confirmation: ""
+    sanitizeDisks:
+      method: quick
+      dataSource: zero
+      iteration: 1
+    allowUninstallWithVolumes: false
+
+  # Resource requests/limits
+  resources:
+    mgr:
+      limits:
+        memory: "1Gi"
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+    mon:
+      limits:
+        memory: "2Gi"
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+    osd:
+      limits:
+        memory: "4Gi"
+      requests:
+        cpu: "500m"
+        memory: "2Gi"
+
+  # Storage configuration - THIS IS THE KEY SECTION
+  storage:
+    # Use all nodes that have storage labels
+    useAllNodes: true
+
+    # Use all raw devices found
+    useAllDevices: true
+
+    # Or specify device filter (regex)
+    # deviceFilter: "^sd[b-z]"
+
+    # Or specify specific devices per node:
+    # nodes:
+    #   - name: "worker1"
+    #     devices:
+    #       - name: "sdb"
+    #       - name: "sdc"
+    #   - name: "worker2"
+    #     devices:
+    #       - name: "sdb"
+
+    # Storage class for OSDs on PVCs (cloud environments)
+    # storageClassDeviceSets:
+    #   - name: set1
+    #     count: 3
+    #     portable: false
+    #     tuneDeviceClass: true
+    #     tuneFastDeviceClass: false
+    #     encrypted: false
+    #     placement: {}
+    #     preparePlacement: {}
+    #     volumeClaimTemplates:
+    #       - metadata:
+    #           name: data
+    #         spec:
+    #           resources:
+    #             requests:
+    #               storage: 100Gi
+    #           storageClassName: gp2
+    #           volumeMode: Block
+    #           accessModes:
+    #             - ReadWriteOnce
+
+  # Placement configuration
+  placement:
+    all:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
+      tolerations:
+        - key: storage-node
+          operator: Exists
+
+  # Disruption management
+  disruptionManagement:
+    managePodBudgets: true
+    osdMaintenanceTimeout: 30
+    pgHealthCheckTimeout: 0
+
+  # Health check intervals
+  healthCheck:
+    daemonHealth:
+      mon:
+        disabled: false
+        interval: 45s
+      osd:
+        disabled: false
+        interval: 60s
+      status:
+        disabled: false
+        interval: 60s
+    livenessProbe:
+      mon:
+        disabled: false
+      mgr:
+        disabled: false
+      osd:
+        disabled: false
+
+---
+# Alternative: Test cluster configuration (single node, no redundancy)
+# Use this for testing when you don't have 3 nodes
+# Uncomment below and comment out the production config above
+
+# apiVersion: ceph.rook.io/v1
+# kind: CephCluster
+# metadata:
+#   name: rook-ceph
+#   namespace: rook-ceph
+# spec:
+#   cephVersion:
+#     image: quay.io/ceph/ceph:v18.2.2
+#   dataDirHostPath: /var/lib/rook
+#   mon:
+#     count: 1
+#     allowMultiplePerNode: true
+#   mgr:
+#     count: 1
+#     allowMultiplePerNode: true
+#   dashboard:
+#     enabled: true
+#   storage:
+#     useAllNodes: true
+#     useAllDevices: true

@@ -1,0 +1,38 @@
+# Persistent Volume Claim Example
+# A PVC is a request for storage by a user/application
+#
+# Key concepts:
+# - accessModes: How the pod wants to use the volume
+# - resources.requests.storage: How much storage is needed
+# - storageClassName: Which PVs to consider for binding
+#
+# Binding rules:
+# 1. PVC accessModes must be a subset of PV accessModes
+# 2. PVC storage request must be <= PV capacity
+# 3. storageClassName must match
+# 4. If multiple PVs match, smallest sufficient PV is selected
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: static-pvc-demo
+  labels:
+    purpose: demo
+spec:
+  # How the volume will be accessed
+  accessModes:
+    - ReadWriteOnce
+
+  # How much storage is needed
+  resources:
+    requests:
+      storage: 500Mi  # Request 500Mi, will bind to 1Gi PV
+
+  # Which StorageClass to use
+  # Must match the PV's storageClassName for static binding
+  storageClassName: manual
+
+  # Optional: Select specific PV by label
+  # selector:
+  #   matchLabels:
+  #     type: local

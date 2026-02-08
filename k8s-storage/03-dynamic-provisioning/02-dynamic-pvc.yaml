@@ -1,0 +1,27 @@
+# Dynamic Provisioning PVC Example
+#
+# With dynamic provisioning, you only create PVCs.
+# The StorageClass's provisioner automatically creates the PV.
+#
+# Benefits:
+# - No need to pre-create PVs
+# - Storage is allocated on-demand
+# - Easier for developers - just request what you need
+#
+# Note: With WaitForFirstConsumer mode, the PVC stays Pending until
+# a pod uses it. This ensures the PV is created on the right node.
+
+---
+# Simple PVC using the default StorageClass
+# When storageClassName is omitted, uses the cluster default (local-path on k3d)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dynamic-pvc-demo
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  # storageClassName omitted = use default StorageClass (local-path)

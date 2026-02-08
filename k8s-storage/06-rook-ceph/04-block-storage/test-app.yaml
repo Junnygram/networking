@@ -1,0 +1,124 @@
+# Test Application: MySQL with Ceph Block Storage
+#
+# This demonstrates a typical database deployment using RBD.
+# MySQL data is stored on a Ceph-backed persistent volume.
+
+---
+# PVC requesting block storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-pvc
+  labels:
+    app: mysql
+spec:
+  accessModes:
+    - ReadWriteOnce  # RBD supports only RWO
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: rook-ceph-block
+
+---
+# MySQL Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  labels:
+    app: mysql
+spec:
+  replicas: 1  # Only 1 replica since RBD is RWO
+  selector:
+    matchLabels:
+      app: mysql
+  strategy:
+    type: Recreate  # Important for RWO volumes
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: "rootpassword"  # Use secrets in production!
+            - name: MYSQL_DATABASE
+              value: "testdb"
+          ports:
+            - containerPort: 3306
+              name: mysql
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+          resources:
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+          livenessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "localhost"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["mysql", "-h", "localhost", "-e", "SELECT 1"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: mysql-data
+          persistentVolumeClaim:
+            claimName: mysql-pvc
+
+---
+# Service to expose MySQL
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  labels:
+    app: mysql
+spec:
+  ports:
+    - port: 3306
+      name: mysql
+  selector:
+    app: mysql
+  type: ClusterIP
+
+---
+# Test pod to verify MySQL works
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mysql-client
+  labels:
+    app: mysql-client
+spec:
+  containers:
+    - name: mysql-client
+      image: mysql:8.0
+      command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for MySQL to be ready..."
+          sleep 30
+          mysql -h mysql -u root -prootpassword -e "
+            USE testdb;
+            CREATE TABLE IF NOT EXISTS test (id INT AUTO_INCREMENT PRIMARY KEY, message VARCHAR(255), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+            INSERT INTO test (message) VALUES ('Hello from Ceph block storage!');
+            SELECT * FROM test;
+          "
+          echo "Test complete. Data is persisted in Ceph!"
+          sleep infinity
+      resources:
+        limits:
+          memory: "128Mi"
+          cpu: "100m"
+  restartPolicy: Never

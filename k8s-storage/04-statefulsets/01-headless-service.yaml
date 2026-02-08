@@ -1,0 +1,27 @@
+# Headless Service for StatefulSet
+#
+# StatefulSets require a headless service to provide network identity
+# to each pod. A headless service has clusterIP: None.
+#
+# With this service, each pod gets a stable DNS name:
+# - web-0.web-headless.default.svc.cluster.local
+# - web-1.web-headless.default.svc.cluster.local
+# - etc.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-headless
+  labels:
+    app: web
+spec:
+  # Headless service - no cluster IP
+  clusterIP: None
+
+  # Select pods managed by the StatefulSet
+  selector:
+    app: web
+
+  ports:
+    - port: 80
+      name: http

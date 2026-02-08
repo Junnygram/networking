@@ -1,0 +1,62 @@
+# StorageClass for Dynamic Bucket Provisioning
+#
+# ObjectBucketClaims (OBC) allow applications to request buckets
+# dynamically, similar to how PVCs request volumes.
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: rook-ceph-bucket-delete
+provisioner: rook-ceph.ceph.rook.io/bucket
+# Provisioner also creates a secret and configmap in the OBC namespace
+
+parameters:
+  # Object store name
+  objectStoreName: my-store
+
+  # Object store namespace
+  objectStoreNamespace: rook-ceph
+
+  # Region (for S3 compatibility)
+  region: us-east-1
+
+# Bucket is deleted when OBC is deleted
+reclaimPolicy: Delete
+
+---
+# StorageClass that retains buckets
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: rook-ceph-bucket-retain
+provisioner: rook-ceph.ceph.rook.io/bucket
+parameters:
+  objectStoreName: my-store
+  objectStoreNamespace: rook-ceph
+  region: us-east-1
+# Bucket is retained when OBC is deleted
+reclaimPolicy: Retain
+
+---
+# Example ObjectBucketClaim
+# Creates a bucket dynamically
+apiVersion: objectbucket.io/v1alpha1
+kind: ObjectBucketClaim
+metadata:
+  name: my-bucket-claim
+  namespace: default
+spec:
+  # StorageClass to use
+  storageClassName: rook-ceph-bucket-delete
+
+  # Bucket name will be auto-generated
+  generateBucketName: my-app-bucket
+
+  # Or specify exact name:
+  # bucketName: my-specific-bucket
+
+# After the OBC is bound, these resources are created:
+# 1. Secret (same name as OBC) containing AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
+# 2. ConfigMap (same name as OBC) containing BUCKET_HOST, BUCKET_NAME, BUCKET_PORT, BUCKET_REGION
+#
+# Mount these in your pods to access the bucket!

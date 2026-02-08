@@ -1,0 +1,67 @@
+# Custom Storage Classes
+#
+# StorageClasses enable dynamic provisioning - PVs are created automatically
+# when PVCs request storage.
+#
+# Key fields:
+# - provisioner: The CSI driver that creates volumes
+# - reclaimPolicy: Delete or Retain
+# - volumeBindingMode: When to create the PV
+# - allowVolumeExpansion: Can volumes grow after creation?
+# - parameters: Provisioner-specific settings
+
+---
+# StorageClass with Retain policy
+# Data persists even after PVC deletion - admin must manually clean up
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: retain-storage-class
+  labels:
+    purpose: demo
+provisioner: rancher.io/local-path  # KinD's default provisioner
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+
+---
+# StorageClass with Delete policy
+# PV and data are automatically deleted when PVC is deleted
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: delete-storage-class
+  labels:
+    purpose: demo
+provisioner: rancher.io/local-path
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+
+---
+# StorageClass with Immediate binding
+# PV is created as soon as PVC is created (not waiting for pod)
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: immediate-storage-class
+  labels:
+    purpose: demo
+provisioner: rancher.io/local-path
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+
+---
+# StorageClass that allows volume expansion
+# Useful when you need to grow storage without recreating
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: expandable-storage-class
+  labels:
+    purpose: demo
+provisioner: rancher.io/local-path
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true  # Enables online volume expansion

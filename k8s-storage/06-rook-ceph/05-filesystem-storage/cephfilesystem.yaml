@@ -1,0 +1,91 @@
+# CephFilesystem - Shared filesystem configuration
+#
+# Creates a CephFS filesystem with metadata and data pools.
+# MDS (Metadata Server) daemons are automatically created.
+
+apiVersion: ceph.rook.io/v1
+kind: CephFilesystem
+metadata:
+  name: myfs
+  namespace: rook-ceph
+spec:
+  # Metadata pool - stores directory structure, file names, etc.
+  metadataPool:
+    replicated:
+      size: 3  # 3 replicas for reliability
+    # deviceClass: ssd  # Prefer SSD for metadata (recommended)
+
+  # Data pools - stores actual file content
+  # You can have multiple pools for different performance tiers
+  dataPools:
+    - name: replicated
+      failureDomain: host
+      replicated:
+        size: 3
+
+    # Optional: Erasure-coded pool for large files
+    # - name: erasure-coded
+    #   failureDomain: host
+    #   erasureCoded:
+    #     dataChunks: 2
+    #     codingChunks: 1
+
+  # Keep filesystem data when CR is deleted
+  # Set to false to delete all data on CR removal
+  preserveFilesystemOnDelete: true
+
+  # Metadata Server configuration
+  metadataServer:
+    # Number of active MDS daemons
+    # More than 1 enables MDS clustering for large filesystems
+    activeCount: 1
+
+    # Keep standby MDS ready for failover
+    activeStandby: true
+
+    # Resource limits for MDS
+    resources:
+      limits:
+        memory: "2Gi"
+        cpu: "1"
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+
+    # Priority class for MDS pods
+    # priorityClassName: system-cluster-critical
+
+    # Placement constraints
+    placement:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
+
+---
+# Test filesystem with lower redundancy
+apiVersion: ceph.rook.io/v1
+kind: CephFilesystem
+metadata:
+  name: myfs-test
+  namespace: rook-ceph
+spec:
+  metadataPool:
+    replicated:
+      size: 2
+  dataPools:
+    - name: replicated
+      failureDomain: osd  # Allow same-host replicas
+      replicated:
+        size: 2
+  preserveFilesystemOnDelete: false
+  metadataServer:
+    activeCount: 1
+    activeStandby: false
+    resources:
+      limits:
+        memory: "1Gi"
+      requests:
+        memory: "512Mi"

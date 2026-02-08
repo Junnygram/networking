@@ -1,0 +1,93 @@
+# RWO Multi-Node Conflict Demo
+#
+# This demonstrates what happens when you try to mount an RWO volume
+# from pods on DIFFERENT nodes.
+#
+# Expected behavior:
+# - First pod starts successfully
+# - Second pod (forced to different node) fails to start
+# - Error: "Multi-Attach error for volume" or scheduling conflict
+#
+# This is a common gotcha when scaling stateless deployments
+# that accidentally use RWO storage.
+
+---
+# PVC with ReadWriteOnce
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: conflict-demo-pvc
+  labels:
+    demo: rwo-conflict
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+
+---
+# First pod - will succeed
+apiVersion: v1
+kind: Pod
+metadata:
+  name: conflict-pod-1
+  labels:
+    demo: rwo-conflict
+spec:
+  # Force to first agent node (k3d naming)
+  nodeSelector:
+    kubernetes.io/hostname: k3d-storage-lab-agent-0
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sleep", "infinity"]
+      volumeMounts:
+        - name: data
+          mountPath: /data
+      resources:
+        limits:
+          memory: "32Mi"
+          cpu: "50m"
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: conflict-demo-pvc
+
+---
+# Second pod - will FAIL if scheduled to different node
+apiVersion: v1
+kind: Pod
+metadata:
+  name: conflict-pod-2
+  labels:
+    demo: rwo-conflict
+spec:
+  # Force to different agent node (k3d naming)
+  nodeSelector:
+    kubernetes.io/hostname: k3d-storage-lab-agent-1
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sleep", "infinity"]
+      volumeMounts:
+        - name: data
+          mountPath: /data
+      resources:
+        limits:
+          memory: "32Mi"
+          cpu: "50m"
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: conflict-demo-pvc
+
+# To test:
+# 1. kubectl apply -f 03-multi-pod-conflict.yaml
+# 2. kubectl get pods -l demo=rwo-conflict -o wide
+# 3. kubectl describe pod conflict-pod-2
+#
+# You'll see an event like:
+# Warning  FailedScheduling  volume node affinity conflict
+# or
+# Warning  FailedAttachVolume  Multi-Attach error for volume "pvc-xxxxx"

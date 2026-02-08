@@ -1,0 +1,61 @@
+# Static Persistent Volume Example
+# This PV must be created by an administrator before a PVC can bind to it
+#
+# Key concepts:
+# - capacity: How much storage this PV provides
+# - accessModes: Who can mount this volume and how
+# - persistentVolumeReclaimPolicy: What happens when the PVC is deleted
+# - storageClassName: Must match PVC's storageClassName for binding
+# - hostPath: Uses a directory on the node (for demo only, not production!)
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: static-pv-demo
+  labels:
+    type: local
+    purpose: demo
+spec:
+  # Storage capacity
+  capacity:
+    storage: 1Gi
+
+  # Access modes - this PV supports ReadWriteOnce
+  # RWO = Only one node can mount read-write
+  accessModes:
+    - ReadWriteOnce
+
+  # What happens when PVC is deleted
+  # Retain = Keep the PV and data (admin must manually reclaim)
+  # Delete = Remove PV and underlying storage
+  persistentVolumeReclaimPolicy: Retain
+
+  # StorageClass name - empty string means "no class"
+  # PVC must specify the same class (or omit for default)
+  storageClassName: manual
+
+  # hostPath storage - uses a path on the Kubernetes node
+  # WARNING: Only for single-node testing! Not for production!
+  hostPath:
+    path: /mnt/data/static-demo
+    type: DirectoryOrCreate
+
+---
+# Second PV to demonstrate binding selection
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: static-pv-demo-2
+  labels:
+    type: local
+    purpose: demo
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: manual
+  hostPath:
+    path: /mnt/data/static-demo-2
+    type: DirectoryOrCreate

@@ -1,0 +1,98 @@
+# ReadWriteOnce (RWO) Access Mode Demo
+#
+# RWO means the volume can be mounted as read-write by a SINGLE NODE.
+# Multiple pods on the SAME node can share the volume.
+# Pods on DIFFERENT nodes cannot both mount the volume.
+#
+# This is the most common access mode, suitable for:
+# - Databases (PostgreSQL, MySQL, MongoDB)
+# - Single-instance applications
+# - Any workload where only one pod writes
+
+---
+# PVC with ReadWriteOnce
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rwo-demo-pvc
+  labels:
+    demo: access-modes
+spec:
+  accessModes:
+    - ReadWriteOnce  # Single node read-write
+  resources:
+    requests:
+      storage: 256Mi
+
+---
+# First pod using the RWO PVC
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rwo-pod-1
+  labels:
+    demo: access-modes
+    app: rwo-demo
+spec:
+  containers:
+    - name: writer
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          echo "Pod 1 starting at $(date)" >> /data/log.txt
+          while true; do
+            echo "$(date) - Pod 1 heartbeat" >> /data/log.txt
+            sleep 30
+          done
+      volumeMounts:
+        - name: data
+          mountPath: /data
+      resources:
+        limits:
+          memory: "32Mi"
+          cpu: "50m"
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: rwo-demo-pvc
+
+---
+# Second pod on the SAME node - this works with RWO
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rwo-pod-2
+  labels:
+    demo: access-modes
+    app: rwo-demo
+spec:
+  # Force onto same node as pod-1 using affinity
+  affinity:
+    podAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: rwo-demo
+          topologyKey: kubernetes.io/hostname
+  containers:
+    - name: reader
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          echo "Pod 2 starting - watching log file..."
+          tail -f /data/log.txt
+      volumeMounts:
+        - name: data
+          mountPath: /data
+      resources:
+        limits:
+          memory: "32Mi"
+          cpu: "50m"
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: rwo-demo-pvc

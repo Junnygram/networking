@@ -1,0 +1,95 @@
+# CephObjectStore - S3-compatible object storage
+#
+# Creates an object storage endpoint with RADOS Gateway (RGW).
+# Provides S3 and Swift compatible APIs.
+
+apiVersion: ceph.rook.io/v1
+kind: CephObjectStore
+metadata:
+  name: my-store
+  namespace: rook-ceph
+spec:
+  # Metadata pool configuration
+  metadataPool:
+    failureDomain: host
+    replicated:
+      size: 3
+
+  # Data pool configuration
+  dataPool:
+    failureDomain: host
+    # Erasure coding is recommended for object storage (cost efficient)
+    # erasureCoded:
+    #   dataChunks: 2
+    #   codingChunks: 1
+    # Or use replication for simplicity
+    replicated:
+      size: 3
+
+  # Keep data when CephObjectStore is deleted
+  preservePoolsOnDelete: true
+
+  # Gateway (RGW) configuration
+  gateway:
+    # Type of service to expose
+    # Use LoadBalancer in cloud environments
+    type: ClusterIP
+    port: 80
+    # securePort: 443  # Enable for HTTPS
+
+    # Number of RGW instances
+    instances: 1
+
+    # Resource limits
+    resources:
+      limits:
+        memory: "2Gi"
+        cpu: "1"
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+
+    # Priority class
+    # priorityClassName: system-cluster-critical
+
+    # Placement constraints
+    placement:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
+
+  # Health check settings
+  healthCheck:
+    bucket:
+      enabled: true
+      interval: 60s
+
+---
+# Test object store with lower redundancy
+apiVersion: ceph.rook.io/v1
+kind: CephObjectStore
+metadata:
+  name: my-store-test
+  namespace: rook-ceph
+spec:
+  metadataPool:
+    failureDomain: osd
+    replicated:
+      size: 2
+  dataPool:
+    failureDomain: osd
+    replicated:
+      size: 2
+  preservePoolsOnDelete: false
+  gateway:
+    type: ClusterIP
+    port: 80
+    instances: 1
+    resources:
+      limits:
+        memory: "1Gi"
+      requests:
+        memory: "512Mi"

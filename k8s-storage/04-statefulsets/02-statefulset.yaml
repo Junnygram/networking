@@ -1,0 +1,81 @@
+# StatefulSet with Persistent Storage
+#
+# StatefulSets provide:
+# 1. Stable, unique network identifiers (web-0, web-1, web-2)
+# 2. Stable, persistent storage per pod
+# 3. Ordered, graceful deployment and scaling
+# 4. Ordered, graceful deletion and termination
+#
+# Key feature: volumeClaimTemplates
+# - Automatically creates a PVC for each pod
+# - PVCs persist even when pods are deleted
+# - When pod is recreated, it gets the SAME PVC back
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web
+  labels:
+    app: web
+spec:
+  # Must match the headless service name
+  serviceName: web-headless
+
+  # Number of replicas
+  replicas: 3
+
+  # Pods are created in order: web-0, then web-1, then web-2
+  # podManagementPolicy: OrderedReady (default)
+  # Use Parallel for faster startup (no ordering guarantees)
+  podManagementPolicy: OrderedReady
+
+  selector:
+    matchLabels:
+      app: web
+
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+              name: http
+
+          # Mount the persistent volume
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/nginx/html
+
+          resources:
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+
+          # Readiness probe
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+  # Volume claim templates - each pod gets its own PVC
+  # PVC names will be: data-web-0, data-web-1, data-web-2
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 256Mi
+        # Uses default StorageClass if not specified
+        # storageClassName: standard

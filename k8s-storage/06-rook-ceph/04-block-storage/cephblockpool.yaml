@@ -1,0 +1,59 @@
+# CephBlockPool - Defines how data is stored and replicated
+#
+# A block pool is where RBD images (block devices) are stored.
+# You can have multiple pools with different characteristics.
+
+apiVersion: ceph.rook.io/v1
+kind: CephBlockPool
+metadata:
+  name: replicapool
+  namespace: rook-ceph
+spec:
+  # Failure domain - how data is distributed
+  # "host" means replicas are placed on different hosts (recommended)
+  # "osd" means replicas can be on same host but different disks
+  failureDomain: host
+
+  # Replication settings
+  replicated:
+    # Number of copies of data (3 = can survive 2 node failures)
+    size: 3
+
+    # Require successful write to this many OSDs before acknowledging
+    # Default is size, can be lower for faster writes (less safe)
+    # requireSafeReplicaSize: true
+
+  # Device class (optional) - prefer SSD, HDD, or NVME
+  # deviceClass: ssd
+
+  # Quotas (optional)
+  # quotas:
+  #   maxBytes: 10Gi
+  #   maxObjects: 1000000
+
+---
+# Test pool with lower replication (for testing environments)
+apiVersion: ceph.rook.io/v1
+kind: CephBlockPool
+metadata:
+  name: replicapool-test
+  namespace: rook-ceph
+spec:
+  failureDomain: osd  # Allow replicas on same host
+  replicated:
+    size: 2  # Only 2 copies
+
+---
+# Erasure-coded pool for cost-efficient storage
+# More storage efficient but higher CPU usage
+apiVersion: ceph.rook.io/v1
+kind: CephBlockPool
+metadata:
+  name: ecpool
+  namespace: rook-ceph
+spec:
+  failureDomain: host
+  erasureCoded:
+    dataChunks: 2    # Number of data chunks
+    codingChunks: 1  # Number of coding (parity) chunks
+    # Requires dataChunks + codingChunks OSDs minimum

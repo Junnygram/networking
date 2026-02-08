@@ -1,0 +1,179 @@
+# CephCluster for k3d with PVC-backed OSDs
+#
+# This configuration uses the local-path StorageClass to create
+# PVCs that back the Ceph OSDs. This is a "storage on storage" setup
+# but works reliably in k3d for learning and testing.
+#
+# Prerequisites:
+#   1. k3d cluster with local-path StorageClass (default)
+#   2. Rook operator installed
+#   3. Volume mount for /var/lib/rook
+#
+# Usage:
+#   kubectl apply -f cluster-k3d-pvc.yaml
+
+apiVersion: ceph.rook.io/v1
+kind: CephCluster
+metadata:
+  name: rook-ceph
+  namespace: rook-ceph
+spec:
+  # Ceph version
+  cephVersion:
+    image: quay.io/ceph/ceph:v18.2.2
+    allowUnsupported: true  # Required for non-standard setups
+
+  # Data directory on host
+  dataDirHostPath: /var/lib/rook
+
+  # Monitor configuration - minimal for k3d
+  mon:
+    count: 1                    # Single mon for testing
+    allowMultiplePerNode: true  # Required since we have limited nodes
+    volumeClaimTemplate:
+      spec:
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 2Gi
+
+  # Manager configuration
+  mgr:
+    count: 1
+    allowMultiplePerNode: true
+    modules:
+      - name: pg_autoscaler
+        enabled: true
+
+  # Dashboard
+  dashboard:
+    enabled: true
+    ssl: false  # Disable SSL for easier access in testing
+
+  # Disable monitoring (no Prometheus in basic k3d setup)
+  monitoring:
+    enabled: false
+
+  # Network - keep it simple
+  network:
+    connections:
+      encryption:
+        enabled: false
+      compression:
+        enabled: false
+
+  # Crash collector
+  crashCollector:
+    disable: false
+
+  # Log collector
+  logCollector:
+    enabled: true
+    periodicity: daily
+    maxLogSize: 100M
+
+  # Cleanup policy
+  cleanupPolicy:
+    confirmation: ""
+    sanitizeDisks:
+      method: quick
+      dataSource: zero
+      iteration: 1
+    allowUninstallWithVolumes: false
+
+  # PVC-backed storage configuration
+  storage:
+    # Use storageClassDeviceSets for PVC-backed OSDs
+    storageClassDeviceSets:
+      - name: set1
+        # Number of OSDs to create
+        count: 3
+
+        # Don't make OSDs portable (stay on same node)
+        portable: false
+
+        # Tune for device class
+        tuneDeviceClass: true
+        tuneFastDeviceClass: false
+
+        # No encryption
+        encrypted: false
+
+        # Spread OSDs across nodes
+        placement:
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: ScheduleAnyway
+              labelSelector:
+                matchLabels:
+                  app: rook-ceph-osd
+
+        # Prepare placement (same as OSD placement)
+        preparePlacement:
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: ScheduleAnyway
+              labelSelector:
+                matchLabels:
+                  app: rook-ceph-osd-prepare
+
+        # PVC template for each OSD
+        volumeClaimTemplates:
+          - metadata:
+              name: data
+            spec:
+              resources:
+                requests:
+                  storage: 5Gi  # Size per OSD
+              storageClassName: local-path
+              volumeMode: Block  # Important: Block mode for Ceph
+              accessModes:
+                - ReadWriteOnce
+
+  # Resource limits - reduced for k3d
+  resources:
+    mgr:
+      limits:
+        memory: "512Mi"
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+    mon:
+      limits:
+        memory: "512Mi"
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+    osd:
+      limits:
+        memory: "1Gi"
+      requests:
+        cpu: "100m"
+        memory: "512Mi"
+    prepareosd:
+      limits:
+        memory: "256Mi"
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+
+  # Health checks
+  healthCheck:
+    daemonHealth:
+      mon:
+        disabled: false
+        interval: 45s
+      osd:
+        disabled: false
+        interval: 60s
+      status:
+        disabled: false
+        interval: 60s
+
+  # Disruption management
+  disruptionManagement:
+    managePodBudgets: false  # Disable for single-replica testing
+    osdMaintenanceTimeout: 30
+    pgHealthCheckTimeout: 0

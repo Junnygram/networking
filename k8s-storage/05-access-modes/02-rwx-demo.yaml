@@ -1,0 +1,159 @@
+# ReadWriteMany (RWX) Access Mode Demo
+#
+# RWX allows the volume to be mounted read-write by MULTIPLE NODES.
+# This enables true shared storage across pods on different nodes.
+#
+# Common RWX storage backends:
+# - NFS
+# - CephFS (via Rook-Ceph)
+# - Azure Files
+# - AWS EFS
+# - GCP Filestore
+#
+# Note: KinD's local-path-provisioner does NOT support RWX.
+# This example uses an in-cluster NFS server for demonstration.
+
+---
+# NFS Server Deployment
+# In production, use a proper NFS server or cloud file storage
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nfs-server
+  labels:
+    demo: rwx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nfs-server
+  template:
+    metadata:
+      labels:
+        app: nfs-server
+    spec:
+      containers:
+        - name: nfs-server
+          image: itsthenetwork/nfs-server-alpine:12
+          ports:
+            - containerPort: 2049
+              name: nfs
+          securityContext:
+            privileged: true
+          env:
+            - name: SHARED_DIRECTORY
+              value: /data
+          volumeMounts:
+            - name: nfs-data
+              mountPath: /data
+          resources:
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+      volumes:
+        - name: nfs-data
+          emptyDir: {}
+
+---
+# Service to expose NFS server
+apiVersion: v1
+kind: Service
+metadata:
+  name: nfs-server
+  labels:
+    demo: rwx
+spec:
+  selector:
+    app: nfs-server
+  ports:
+    - port: 2049
+      name: nfs
+  clusterIP: None  # Headless for stable DNS
+
+---
+# PV using NFS (must be created after NFS server is running)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nfs-pv
+  labels:
+    demo: rwx
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteMany  # Multiple nodes can mount read-write
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs
+  nfs:
+    server: nfs-server.default.svc.cluster.local
+    path: /
+
+---
+# PVC claiming the NFS volume
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rwx-demo-pvc
+  labels:
+    demo: rwx
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: nfs
+
+---
+# Deployment with multiple replicas sharing storage
+# Pods will be scheduled across different nodes
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rwx-demo-app
+  labels:
+    demo: rwx
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: rwx-demo
+  template:
+    metadata:
+      labels:
+        app: rwx-demo
+    spec:
+      # Spread pods across nodes
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: rwx-demo
+      containers:
+        - name: app
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              HOSTNAME=$(hostname)
+              while true; do
+                echo "$(date) - $HOSTNAME was here" >> /shared/activity.log
+                echo "Recent activity:"
+                tail -5 /shared/activity.log
+                sleep 10
+              done
+          volumeMounts:
+            - name: shared-data
+              mountPath: /shared
+          resources:
+            limits:
+              memory: "32Mi"
+              cpu: "50m"
+      volumes:
+        - name: shared-data
+          persistentVolumeClaim:
+            claimName: rwx-demo-pvc

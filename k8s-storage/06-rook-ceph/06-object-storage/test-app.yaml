@@ -1,0 +1,175 @@
+# Test Application: S3-Compatible Object Storage
+#
+# Demonstrates using Ceph RGW with AWS CLI and SDK.
+
+---
+# ObjectBucketClaim - dynamically creates a bucket
+apiVersion: objectbucket.io/v1alpha1
+kind: ObjectBucketClaim
+metadata:
+  name: app-bucket
+  namespace: default
+spec:
+  storageClassName: rook-ceph-bucket-delete
+  generateBucketName: app-data
+
+---
+# Test pod using the bucket
+apiVersion: v1
+kind: Pod
+metadata:
+  name: s3-test-pod
+  labels:
+    app: s3-test
+spec:
+  containers:
+    - name: aws-cli
+      image: amazon/aws-cli:2.15.0
+      command:
+        - /bin/sh
+        - -c
+        - |
+          echo "=== S3 Object Storage Test ==="
+
+          # Configure AWS CLI with credentials from OBC secret
+          export AWS_ACCESS_KEY_ID=$(cat /credentials/AWS_ACCESS_KEY_ID)
+          export AWS_SECRET_ACCESS_KEY=$(cat /credentials/AWS_SECRET_ACCESS_KEY)
+
+          # Get endpoint from configmap
+          BUCKET_HOST=$(cat /config/BUCKET_HOST)
+          BUCKET_PORT=$(cat /config/BUCKET_PORT)
+          BUCKET_NAME=$(cat /config/BUCKET_NAME)
+          ENDPOINT="http://${BUCKET_HOST}:${BUCKET_PORT}"
+
+          echo "Endpoint: ${ENDPOINT}"
+          echo "Bucket: ${BUCKET_NAME}"
+
+          # Wait for RGW to be ready
+          echo "Waiting for RGW endpoint..."
+          sleep 10
+
+          # Test S3 operations
+          echo ""
+          echo "1. List buckets:"
+          aws --endpoint-url="${ENDPOINT}" s3 ls
+
+          echo ""
+          echo "2. Create a test file:"
+          echo "Hello from Ceph Object Storage!" > /tmp/test.txt
+          echo "Created at: $(date)" >> /tmp/test.txt
+
+          echo ""
+          echo "3. Upload file to bucket:"
+          aws --endpoint-url="${ENDPOINT}" s3 cp /tmp/test.txt s3://${BUCKET_NAME}/test.txt
+
+          echo ""
+          echo "4. List bucket contents:"
+          aws --endpoint-url="${ENDPOINT}" s3 ls s3://${BUCKET_NAME}/
+
+          echo ""
+          echo "5. Download and verify:"
+          aws --endpoint-url="${ENDPOINT}" s3 cp s3://${BUCKET_NAME}/test.txt /tmp/downloaded.txt
+          cat /tmp/downloaded.txt
+
+          echo ""
+          echo "6. Upload multiple files:"
+          for i in 1 2 3; do
+            echo "Data file $i - $(date)" > /tmp/data-$i.txt
+            aws --endpoint-url="${ENDPOINT}" s3 cp /tmp/data-$i.txt s3://${BUCKET_NAME}/data/
+          done
+
+          echo ""
+          echo "7. List all objects:"
+          aws --endpoint-url="${ENDPOINT}" s3 ls s3://${BUCKET_NAME}/ --recursive
+
+          echo ""
+          echo "=== Test Complete! ==="
+          echo "Object storage is working correctly."
+
+          # Keep pod running for inspection
+          sleep infinity
+
+      # Mount OBC credentials and config
+      volumeMounts:
+        - name: bucket-credentials
+          mountPath: /credentials
+          readOnly: true
+        - name: bucket-config
+          mountPath: /config
+          readOnly: true
+
+      resources:
+        limits:
+          memory: "256Mi"
+          cpu: "200m"
+
+  volumes:
+    # Secret created by OBC (contains access keys)
+    - name: bucket-credentials
+      secret:
+        secretName: app-bucket
+
+    # ConfigMap created by OBC (contains endpoint info)
+    - name: bucket-config
+      configMap:
+        name: app-bucket
+
+  restartPolicy: Never
+
+---
+# Alternative: Pod using manually created user credentials
+apiVersion: v1
+kind: Pod
+metadata:
+  name: s3-manual-test
+  labels:
+    app: s3-manual-test
+spec:
+  containers:
+    - name: aws-cli
+      image: amazon/aws-cli:2.15.0
+      command:
+        - /bin/sh
+        - -c
+        - |
+          # Using credentials from manually created user
+          # See object-user.yaml
+
+          # Get RGW service endpoint
+          RGW_SERVICE="rook-ceph-rgw-my-store.rook-ceph.svc.cluster.local"
+          ENDPOINT="http://${RGW_SERVICE}:80"
+
+          echo "Testing with manual user credentials..."
+          echo "Endpoint: ${ENDPOINT}"
+
+          # Create and list bucket
+          aws --endpoint-url="${ENDPOINT}" s3 mb s3://manual-test-bucket || true
+          aws --endpoint-url="${ENDPOINT}" s3 ls
+
+          # Upload test file
+          echo "Test from manual credentials" > /tmp/test.txt
+          aws --endpoint-url="${ENDPOINT}" s3 cp /tmp/test.txt s3://manual-test-bucket/
+
+          # List contents
+          aws --endpoint-url="${ENDPOINT}" s3 ls s3://manual-test-bucket/
+
+          sleep infinity
+
+      env:
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: rook-ceph-object-user-my-store-my-user
+              key: AccessKey
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: rook-ceph-object-user-my-store-my-user
+              key: SecretKey
+
+      resources:
+        limits:
+          memory: "256Mi"
+          cpu: "200m"
+
+  restartPolicy: Never
