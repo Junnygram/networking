@@ -26,3 +26,6 @@ crash.log
 
 # Ignore .terraform.lock.hcl files
 .terraform.lock.hcl
+
+# Ignore macOS specific files
+.DS_Store
