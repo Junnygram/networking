@@ -1,4 +1,4 @@
-# ML Service v1.0 - Capstone Demo - CI/CD Enabled
+# ML Service v1.0 - Capstone Demo
 import time
 from flask import Flask, jsonify, request, Response
 import random

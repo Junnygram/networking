@@ -1,4 +1,4 @@
-// Backend Service v1.0 - Capstone Demo - CI/CD Enabled
+// Backend Service v1.0 - Capstone Demo
 const express = require("express");
 const { Pool } = require("pg");
 const redis = require("redis");

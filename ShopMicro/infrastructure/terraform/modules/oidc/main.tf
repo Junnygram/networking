@@ -1,7 +1,4 @@
-variable "env_prefix" {}
-variable "github_repo" {
-  default = "Junnygram/networking"
-}
+
 
 # GitHub OIDC Provider — allows GitHub Actions to assume AWS roles without static keys
 data "aws_iam_openid_connect_provider" "github" {
@@ -42,6 +39,3 @@ resource "aws_iam_role_policy_attachment" "ecr_power_user" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
 }
 
-output "github_actions_role_arn" {
-  value = aws_iam_role.github_actions_role.arn
-}
