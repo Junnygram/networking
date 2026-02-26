@@ -34,7 +34,7 @@ spec:
               topologyKey: "kubernetes.io/hostname"
       containers:
       - name: backend
-        image: your-registry/shopmicro-backend:latest
+        image: 307946680662.dkr.ecr.us-east-1.amazonaws.com/dev-shopmicro-backend:latest
         ports:
         - containerPort: 8080
         resources:

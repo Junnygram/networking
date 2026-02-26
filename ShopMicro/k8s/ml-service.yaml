@@ -23,7 +23,7 @@ spec:
         effect: "NoSchedule"
       containers:
       - name: ml-service
-        image: your-registry/shopmicro-ml:latest
+        image: 307946680662.dkr.ecr.us-east-1.amazonaws.com/dev-shopmicro-ml:latest
         ports:
         - containerPort: 5000
         resources:

@@ -79,6 +79,7 @@ resource "aws_instance" "k8s_master" {
   vpc_security_group_ids      = [aws_security_group.nodes_sg.id]
   associate_public_ip_address = true
   key_name                    = aws_key_pair.k8s_ssh_key.key_name
+  iam_instance_profile        = aws_iam_instance_profile.k8s_node_profile.name
 
   user_data = <<-EOF
               #!/bin/bash
@@ -105,6 +106,47 @@ resource "aws_instance" "k8s_master" {
                 --tls-san "$(hostname -I | awk '{print $1}')" 2>&1 | tee -a /var/log/k3s-install.log
 
               echo "K3s installation complete" >> /var/log/k3s-install.log
+
+              # Wait for K3s API to become ready
+              sleep 10
+              export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+              
+              # Install AWS CLI to get ECR token
+              snap install aws-cli --classic
+              
+              # Create namespace if it doesn't exist
+              kubectl create namespace shopmicro 2>/dev/null || true
+              
+              # Get ECR Token and Create/Update Secret
+              REGION="us-east-1"
+              ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+              TOKEN=$(aws ecr get-login-password --region $REGION)
+              
+              kubectl delete secret ecr-cred -n shopmicro 2>/dev/null || true
+              kubectl create secret docker-registry ecr-cred \
+                --docker-server=$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com \
+                --docker-username=AWS \
+                --docker-password=$TOKEN -n shopmicro
+                
+              # Patch default service account so all pods use this secret automatically
+              kubectl patch serviceaccount default -p '{"imagePullSecrets":[{"name":"ecr-cred"}]}' -n shopmicro
+
+              # Add script to cron to refresh every 6 hours
+              cat << 'CRONSCRIPT' > /usr/local/bin/refresh-ecr.sh
+              #!/bin/bash
+              export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+              REGION="us-east-1"
+              ACCOUNT_ID=$(/snap/bin/aws sts get-caller-identity --query Account --output text)
+              TOKEN=$(/snap/bin/aws ecr get-login-password --region $REGION)
+              kubectl delete secret ecr-cred -n shopmicro 2>/dev/null || true
+              kubectl create secret docker-registry ecr-cred \
+                --docker-server=$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com \
+                --docker-username=AWS \
+                --docker-password=$TOKEN -n shopmicro
+              kubectl patch serviceaccount default -p '{"imagePullSecrets":[{"name":"ecr-cred"}]}' -n shopmicro
+              CRONSCRIPT
+              chmod +x /usr/local/bin/refresh-ecr.sh
+              echo "0 */6 * * * root /usr/local/bin/refresh-ecr.sh" > /etc/cron.d/ecr-refresh
               EOF
 
   tags = {
@@ -120,6 +162,7 @@ resource "aws_instance" "k8s_worker" {
   vpc_security_group_ids      = [aws_security_group.nodes_sg.id]
   associate_public_ip_address = true
   key_name                    = aws_key_pair.k8s_ssh_key.key_name
+  iam_instance_profile        = aws_iam_instance_profile.k8s_node_profile.name
 
   # Wait for master, retrieve token, and join
   user_data = <<-EOF
