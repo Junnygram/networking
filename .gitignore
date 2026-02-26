@@ -1,0 +1,15 @@
+# Sensitive files
+ShopMicro/aws-kubeconfig.yaml
+
+# Terraform files
+**/.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+.terraform.lock.hcl
+
+# Local bootstrap
+ShopMicro/infrastructure/terraform/bootstrap/
+
+# Other untracked folders
+eks/
