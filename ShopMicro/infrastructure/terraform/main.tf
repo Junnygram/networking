@@ -9,7 +9,7 @@ terraform {
 
   # Configured for remote state with locking as per requirements
   backend "s3" {
-    bucket         = "shopmicro-terraform-state-bucket"
+    bucket         = "shopmicro-terraform-state-bucket-if2z6m"
     key            = "platform/terraform.tfstate"
     region         = "us-east-1"
     dynamodb_table = "terraform-state-lock"
@@ -18,7 +18,9 @@ terraform {
 }
 
 provider "aws" {
-  region = var.aws_region
+  region     = var.aws_region
+  access_key = var.aws_access_key
+  secret_key = var.aws_secret_key
 }
 
 # --- Module Invocations ---
@@ -53,4 +55,40 @@ module "security" {
 
   vpc_id     = module.network.vpc_id
   env_prefix = var.environment
+}
+
+module "ecr" {
+  source     = "./modules/ecr"
+  env_prefix = var.environment
+}
+
+module "oidc" {
+  source      = "./modules/oidc"
+  env_prefix  = var.environment
+  github_repo = "Junnygram/networking"
+}
+
+# ---- Outputs (used by Makefile + CI Pipeline) ----
+output "k8s_master_ip" {
+  value = module.compute.master_public_ip
+}
+
+output "k8s_worker_ip" {
+  value = module.compute.worker_public_ip
+}
+
+output "ecr_backend_url" {
+  value = module.ecr.backend_repository_url
+}
+
+output "ecr_frontend_url" {
+  value = module.ecr.frontend_repository_url
+}
+
+output "ecr_ml_service_url" {
+  value = module.ecr.ml_service_repository_url
+}
+
+output "github_actions_role_arn" {
+  value = module.oidc.github_actions_role_arn
 }

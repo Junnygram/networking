@@ -1,0 +1,86 @@
+# Kyverno ClusterPolicy: Require Resource Limits
+# Blocks any pod without CPU/memory limits from being scheduled.
+# This enforces cost governance and prevents resource starvation.
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  annotations:
+    policies.kyverno.io/title: Require Resource Limits
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      All containers must define CPU and memory resource limits
+      to prevent resource starvation attacks and runaway processes.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+  - name: validate-resource-limits
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    validate:
+      message: "CPU and memory limits are required for all containers."
+      pattern:
+        spec:
+          containers:
+          - resources:
+              limits:
+                memory: "?*"
+                cpu: "?*"
+---
+# Kyverno ClusterPolicy: Disallow Privileged Containers
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged-containers
+  annotations:
+    policies.kyverno.io/title: Disallow Privileged Containers
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: critical
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+  - name: deny-privileged
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    validate:
+      message: "Privileged containers are not allowed."
+      pattern:
+        spec:
+          containers:
+          - securityContext:
+              privileged: "false"
+---
+# Kyverno ClusterPolicy: Require Labels
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-app-label
+  annotations:
+    policies.kyverno.io/title: Require App Label
+    policies.kyverno.io/category: Best Practices
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: check-for-app-label
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    validate:
+      message: "The label 'app' is required on all Pods."
+      pattern:
+        metadata:
+          labels:
+            app: "?*"

@@ -1,1 +1,21 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform.lock.hcl
+
+# SSH Keys
+shopmicro-key
+shopmicro-key.pub
+
+# Kubeconfig
+kubeconfig.yaml
+aws-kubeconfig.yaml
+
+# Local evidence (regenerated each run)
+evidence/
+
+# Demo guides (local only, not for GitHub)
+demo.md
 change.md

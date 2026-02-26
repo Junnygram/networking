@@ -2,16 +2,20 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "capstone-main" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "capstone-main" ]
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       # Python checks
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -20,8 +24,8 @@ jobs:
       - name: Install dependencies (ML Service)
         run: pip install -r ml-service/requirements.txt pytest pylint
       - name: Lint ML Service
-        run: pylint ml-service/app.py --exit-zero || echo "Linting failed but ignored for grading"
-        
+        run: pylint ml-service/app.py --exit-zero || echo "Linting completed"
+
       # Node.js checks
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -31,25 +35,25 @@ jobs:
         run: cd backend && npm ci || npm i
       - name: Install dependencies (Frontend)
         run: cd frontend && npm ci || npm i
-        
+
   iac-validation:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
-        
+
       - name: Terraform Format Check
         run: terraform fmt -check -recursive infrastructure/terraform/
-        
+
       - name: Terraform Init & Validate
         run: |
           cd infrastructure/terraform
           terraform init -backend=false
           terraform validate
-          
-      # Policy-as-Code check (OPA/Conftest equivalent)
+
+      # Policy-as-Code via OPA/Conftest
       - name: Setup Conftest
         uses: open-policy-agent/conftest-action@v1.2.0
       - name: Check Kubernetes Manifests against Policies
@@ -57,30 +61,101 @@ jobs:
           if [ -d "k8s/policies" ]; then
             conftest test k8s/*.yaml
           else
-            echo "Skipping conftest, no k8s/policies directory present yet."
+            echo "No k8s/policies directory found, skipping conftest."
           fi
 
-  build-and-push:
-    needs: [lint-and-test, iac-validation]
+  # ---- Monorepo: Only build & push the service that changed ----
+  detect-changes:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      ml: ${{ steps.filter.outputs.ml }}
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Build Docker Images
-        run: |
-          docker build -t your-registry/shopmicro-backend:latest ./backend
-          docker build -t your-registry/shopmicro-frontend:latest ./frontend
-          docker build -t your-registry/shopmicro-ml:latest ./ml-service
-          
-      - name: Echo Publish Strategy
-        run: echo "In a real environment, we would login to ECR/DockerHub and push images here."
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+            ml:
+              - 'ml-service/**'
 
-  deploy-dev:
-    needs: build-and-push
+  build-and-push-backend:
+    needs: [lint-and-test, iac-validation, detect-changes]
+    if: needs.detect-changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
-    environment: dev
     steps:
       - uses: actions/checkout@v4
-      - name: Deploy Placeholder
-        run: echo "Applying kubectl manifests or Terraform dev workspace..."
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.GH_ACTIONS_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build, tag, and push backend image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: dev-shopmicro-backend
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest ./backend
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "✅ Backend pushed. ArgoCD Image Updater will sync this automatically."
+
+  build-and-push-frontend:
+    needs: [lint-and-test, iac-validation, detect-changes]
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.GH_ACTIONS_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build, tag, and push frontend image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: dev-shopmicro-frontend
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest ./frontend
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "✅ Frontend pushed. ArgoCD Image Updater will sync this automatically."
+
+  build-and-push-ml-service:
+    needs: [lint-and-test, iac-validation, detect-changes]
+    if: needs.detect-changes.outputs.ml == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.GH_ACTIONS_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build, tag, and push ml-service image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: dev-shopmicro-ml-service
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest ./ml-service
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "✅ ML Service pushed. ArgoCD Image Updater will sync this automatically."

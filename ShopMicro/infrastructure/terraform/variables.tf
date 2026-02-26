@@ -9,3 +9,17 @@ variable "environment" {
   type        = string
   default     = "dev"
 }
+
+variable "aws_access_key" {
+  description = "AWS Access Key"
+  type        = string
+  sensitive   = true
+  default     = "AKIAUPMYNOFLCMLVUIW3"
+}
+
+variable "aws_secret_key" {
+  description = "AWS Secret Key"
+  type        = string
+  sensitive   = true
+  default     = "oO3+TDCxVtdEiuV4UKvwl5e870ZDm+hAzq5KPPt4"
+}
