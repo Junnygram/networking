@@ -132,18 +132,26 @@ ev-04-argocd-install: ## 📸 [4/20] Install ArgoCD + Image Updater
 	@echo "  → Capture: ArgoCD pods running in argocd namespace"
 	@echo "════════════════════════════════════════════════════════════════"
 	kubectl create namespace argocd 2>/dev/null || true
-	kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-	kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/stable/manifests/install.yaml
+	kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+	kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/v0.12.0/manifests/install.yaml
 	@echo "⏳ Waiting 60s for ArgoCD pods to start..."
 	sleep 60
 	kubectl get pods -n argocd
 	@echo ""
 	@echo "🔐 ArgoCD admin password:"
-	kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d && echo ""
+	@kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d && echo ""
 	@echo ""
-	@echo "📝 MANUAL: Run port-forward, then open ArgoCD UI:"
-	@echo "   kubectl port-forward svc/argocd-server -n argocd 8443:443 &"
-	@echo "   Open: https://localhost:8443"
+	@echo "📝 Run 'make argocd-pf' in a new terminal to access the UI"
+
+argocd-pf: ## 🔓 Get ArgoCD Password and Port-Forward UI
+	@echo "════════════════════════════════════════════════════════════════"
+	@echo "🔐 ArgoCD admin password:"
+	@kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d && echo ""
+	@echo ""
+	@echo "🌐 Port forwarding ArgoCD to https://localhost:8443"
+	@echo "   Hit Ctrl+C to stop."
+	@echo "════════════════════════════════════════════════════════════════"
+	kubectl port-forward svc/argocd-server -n argocd 8443:443
 
 ev-05-argocd-app: ## 📸 [5/20] Create ArgoCD App + Sync — Shows ECR images
 	@echo "════════════════════════════════════════════════════════════════"
