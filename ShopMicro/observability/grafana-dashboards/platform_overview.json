@@ -1,0 +1,20 @@
+{
+  "title": "Platform Overview",
+  "timezone": "browser",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Backend Uptime",
+      "targets": [
+        { "expr": "sum(up{job=\"shopmicro-backend\"})" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "ML Service Uptime",
+      "targets": [
+        { "expr": "sum(up{job=\"shopmicro-ml-service\"})" }
+      ]
+    }
+  ]
+}

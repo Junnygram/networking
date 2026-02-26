@@ -1,0 +1,33 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - 'alert-rules.yml'
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'shopmicro-backend'
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: keep
+        regex: backend
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        action: keep
+        regex: 8080
+
+  - job_name: 'shopmicro-ml-service'
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: keep
+        regex: ml-service
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        action: keep
+        regex: 5000

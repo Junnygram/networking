@@ -1,0 +1,20 @@
+{
+  "title": "Backend Health",
+  "timezone": "browser",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Backend Request Rate",
+      "targets": [
+        { "expr": "rate(http_requests_total{job=\"shopmicro-backend\"}[1m])" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "95th Percentile Latency",
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_ms_bucket[5m])) by (le))" }
+      ]
+    }
+  ]
+}

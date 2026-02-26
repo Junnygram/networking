@@ -1,0 +1,20 @@
+groups:
+- name: shopmicro_alerts
+  rules:
+  - alert: HighErrorRate
+    expr: rate(http_requests_total{code=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: High HTTP 5xx error rate detected
+      description: "Service {{ $labels.app }} is experiencing > 5% error rate for the last 5 minutes."
+
+  - alert: HighLatency
+    expr: histogram_quantile(0.95, rate(http_request_duration_ms_bucket[5m])) > 500
+    for: 3m
+    labels:
+      severity: warning
+    annotations:
+      summary: High latency detected
+      description: "95th percentile latency for {{ $labels.app }} is greater than 500ms."

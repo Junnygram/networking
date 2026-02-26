@@ -1,0 +1,13 @@
+{
+  "title": "Logs and Traces Correlation",
+  "timezone": "browser",
+  "panels": [
+    {
+      "type": "logs",
+      "title": "App Logs with Trace IDs",
+      "targets": [
+        { "expr": "{app=\"backend\"} |= \"trace_id\"" }
+      ]
+    }
+  ]
+}

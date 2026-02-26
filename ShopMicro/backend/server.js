@@ -1,9 +1,42 @@
 const express = require("express");
 const { Pool } = require("pg");
 const redis = require("redis");
+const client = require("prom-client");
 
 const app = express();
 app.use(express.json());
+
+// Initialize Prometheus metrics
+const collectDefaultMetrics = client.collectDefaultMetrics;
+collectDefaultMetrics();
+
+const httpRequestDurationMicroseconds = new client.Histogram({
+  name: "http_request_duration_ms",
+  help: "Duration of HTTP requests in ms",
+  labelNames: ["method", "route", "code"],
+  buckets: [50, 100, 200, 300, 400, 500, 750, 1000, 2000] // defined in milliseconds
+});
+
+const httpRequestsTotal = new client.Counter({
+  name: "http_requests_total",
+  help: "Total number of HTTP requests",
+  labelNames: ["method", "route", "code"]
+});
+
+// Middleware to capture metrics
+app.use((req, res, next) => {
+  res.locals.startEpoch = Date.now();
+  res.on("finish", () => {
+    const responseTimeInMs = Date.now() - res.locals.startEpoch;
+    httpRequestDurationMicroseconds
+      .labels(req.method, req.route ? req.route.path : req.path, res.statusCode)
+      .observe(responseTimeInMs);
+    httpRequestsTotal
+      .labels(req.method, req.route ? req.route.path : req.path, res.statusCode)
+      .inc();
+  });
+  next();
+});
 
 const pool = new Pool({
   host: process.env.DB_HOST || "postgres",
@@ -32,6 +65,12 @@ app.get("/products", async (_req, res) => {
   } catch (err) {
     res.status(500).json({ error: "backend_error", detail: err.message });
   }
+});
+
+// Expose metrics endpoint
+app.get("/metrics", async (req, res) => {
+  res.set("Content-Type", client.register.contentType);
+  res.end(await client.register.metrics());
 });
 
 app.listen(8080, () => console.log("backend listening on 8080"));
