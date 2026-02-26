@@ -3,19 +3,35 @@ kind: Deployment
 metadata:
   name: frontend
   namespace: shopmicro
+  labels:
+    app: frontend
 spec:
-  replicas: 1
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
-    matchLabels: { app: frontend }
+    matchLabels:
+      app: frontend
   template:
     metadata:
-      labels: { app: frontend }
+      labels:
+        app: frontend
     spec:
       containers:
       - name: frontend
         image: your-registry/shopmicro-frontend:latest
         ports:
         - containerPort: 80
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "150m"
+            memory: "128Mi"
         env:
         - name: VITE_API_BASE
           value: http://backend:8080
@@ -28,8 +44,9 @@ metadata:
   name: frontend
   namespace: shopmicro
 spec:
-  selector: { app: frontend }
+  selector:
+    app: frontend
   ports:
   - port: 80
     targetPort: 80
-    type: LoadBalancer
+  type: LoadBalancer

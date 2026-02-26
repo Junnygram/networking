@@ -1,0 +1,7 @@
+---
+- name: Configure Kubernetes Platform Nodes
+  hosts: kubernetes_nodes
+  become: yes
+  roles:
+    - docker
+    # Add Kubernetes specific provisioning steps (kubeadm, kubelet, etc)

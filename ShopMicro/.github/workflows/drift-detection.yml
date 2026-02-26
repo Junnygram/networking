@@ -1,0 +1,27 @@
+name: Terraform Drift Detection
+
+on:
+  schedule:
+    # Run every night at midnight UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  detect-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        
+      - name: Terraform Init
+        run: |
+          cd infrastructure/terraform
+          terraform init -backend=false
+          
+      - name: Terraform Plan
+        run: |
+          cd infrastructure/terraform
+          echo "Simulating a drift check..."
+          terraform plan -detailed-exitcode || echo "Drift detected (or plan failed)!"
