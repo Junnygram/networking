@@ -116,7 +116,7 @@ push-trigger: ## 🚀 Push code to trigger CI pipeline (run AFTER ev-02)
 	@echo "   GH_ACTIONS_ROLE_ARN = (the ARN printed by ev-02)"
 	@echo ""
 	git add -A
-	git commit -m "feat: full capstone infrastructure + observability + CI/CD" || true
+	git commit --allow-empty -m "feat: trigger capstone pipeline" || true
 	git push origin HEAD
 	@echo ""
 	@echo "╔══════════════════════════════════════════════════════════╗"
