@@ -32,19 +32,19 @@ jobs:
       - name: Install dependencies (Frontend)
         run: cd ShopMicro/frontend && npm ci || npm i
 
-  # iac-validation:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - name: Setup Terraform
-  #       uses: hashicorp/setup-terraform@v3
-  #     - name: Terraform Format Check
-  #       run: terraform fmt -check -recursive ShopMicro/infrastructure/terraform/
-  #     - name: Terraform Init & Validate
-  #       run: |
-  #         cd ShopMicro/infrastructure/terraform
-  #         terraform init -backend=false
-  #         terraform validate
+  iac-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive ShopMicro/infrastructure/terraform/
+      - name: Terraform Init & Validate
+        run: |
+          cd ShopMicro/infrastructure/terraform
+          terraform init -backend=false
+          terraform validate
   # NOTE: Terraform validation commented out - infrastructure managed locally for capstone evidence
 
   detect-changes:
@@ -86,9 +86,10 @@ jobs:
           ECR_REPOSITORY: dev-shopmicro-backend
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./ShopMicro/backend
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest ./ShopMicro/backend
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          echo "ArgoCD Image Updater will automatically detect $IMAGE_TAG!"
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "✅ Backend pushed. ArgoCD Image Updater will sync this automatically."
 
   build-and-push-frontend:
     needs: [detect-changes, lint-and-test]
@@ -110,9 +111,10 @@ jobs:
           ECR_REPOSITORY: dev-shopmicro-frontend
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./ShopMicro/frontend
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest ./ShopMicro/frontend
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          echo "ArgoCD Image Updater will automatically detect $IMAGE_TAG!"
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "✅ Frontend pushed. ArgoCD Image Updater will sync this automatically."
 
   build-and-push-ml-service:
     needs: [detect-changes, lint-and-test]
@@ -134,6 +136,7 @@ jobs:
           ECR_REPOSITORY: dev-shopmicro-ml-service
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./ShopMicro/ml-service
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest ./ShopMicro/ml-service
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          echo "ArgoCD Image Updater will automatically detect $IMAGE_TAG!"
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "✅ ML Service pushed. ArgoCD Image Updater will sync this automatically."
