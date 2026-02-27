@@ -442,6 +442,27 @@ argocd-status: ## 🚢 Show ArgoCD Sync Status and Apps
 	@echo "🖼️  Image Updater Status:"
 	@kubectl logs deployment/argocd-image-updater -n argocd | tail -n 5
 
+alert-simulation: ## 🚨 [DEMO] Simulate service outage and recovery for Slack alerts
+	@echo "════════════════════════════════════════════════════════════════"
+	@echo "🚨 SIMULATING OUTAGE: Scaling backend to 0..."
+	@echo "════════════════════════════════════════════════════════════════"
+	kubectl scale deployment backend -n $(NAMESPACE) --replicas=0
+	@echo "⏳ Waiting 30s for Prometheus to detect and AlertManager to fire..."
+	@sleep 30
+	@echo "✅ Check your Slack channel: #shopmicro-alerts"
+	@echo ""
+	@echo "════════════════════════════════════════════════════════════════"
+	@echo "🔄 SIMULATING RECOVERY: Scaling backend back to 2..."
+	@echo "════════════════════════════════════════════════════════════════"
+	kubectl scale deployment backend -n $(NAMESPACE) --replicas=2
+	@echo "✅ Recovery triggered. Slack 'Resolved' notification should follow."
+
+k8s-rollback: ## ⏪ [DEMO] Quickly rollback backend to previous version
+	@echo "⏪ Rolling back backend deployment..."
+	kubectl rollout undo deployment/backend -n $(NAMESPACE)
+	kubectl rollout status deployment/backend -n $(NAMESPACE)
+
+
 tf-destroy: ## 🚨 Destroy ALL infra (VPC, EC2, ECR, OIDC — everything)
 	@echo "🚨 DESTROYING ALL AWS INFRASTRUCTURE..."
 	cd $(TF_DIR) && terraform init -reconfigure && terraform destroy -auto-approve
