@@ -10,6 +10,8 @@ help-demo: ## Show demo guide
 # Pattern match to delegate everything to ShopMicro/Makefile
 %:
 	@if [ -f ShopMicro/Makefile ]; then \
+		export KUBECONFIG=$(CURDIR)/ShopMicro/kubeconfig.yaml; \
+		export NAMESPACE=shopmicro; \
 		cd ShopMicro && $(MAKE) $@; \
 	else \
 		echo "Error: ShopMicro/Makefile not found"; \

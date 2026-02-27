@@ -1,0 +1,8 @@
+NAME                          READY   STATUS    RESTARTS   AGE     IP           NODE              NOMINATED NODE   READINESS GATES
+backend-5b6b55c95b-b6j68      1/1     Running   0          3m14s   10.42.0.18   ip-10-0-101-201   <none>           <none>
+backend-5b6b55c95b-vxmzb      1/1     Running   0          3m15s   10.42.1.17   ip-10-0-101-114   <none>           <none>
+frontend-7985c6cb85-f64t7     1/1     Running   0          3m12s   10.42.0.19   ip-10-0-101-201   <none>           <none>
+frontend-7985c6cb85-kd9ql     1/1     Running   0          3m12s   10.42.1.18   ip-10-0-101-114   <none>           <none>
+ml-service-64c8497dcc-g29dg   1/1     Running   0          3m9s    10.42.1.19   ip-10-0-101-114   <none>           <none>
+postgres-0                    1/1     Running   0          13m     10.42.1.14   ip-10-0-101-114   <none>           <none>
+redis-6c6fcd64b8-rmzpd        1/1     Running   0          13m     10.42.1.11   ip-10-0-101-114   <none>           <none>

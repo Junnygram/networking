@@ -14,8 +14,8 @@ kubeconfig.yaml
 aws-kubeconfig.yaml
 
 # Local evidence (regenerated each run)
-evidence/
+# evidence/ (Removed from ignore for submission)
 
-# Demo guides (local only, not for GitHub)
-demo.md
-change.md
+# Demo guides (Removed from ignore for submission)
+# demo.md
+# change.md

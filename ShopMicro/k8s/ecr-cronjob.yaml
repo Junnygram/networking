@@ -49,16 +49,22 @@ spec:
             - /bin/sh
             - -c
             - |-
+              # Install kubectl
+              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+              chmod +x kubectl
+              mv kubectl /usr/local/bin/
+              
               ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
               REGION=us-east-1
-              SECRET_NAME=ecr-registry-secret
-              EMAIL=none
+              SECRET_NAME=ecr-cred
               TOKEN=$(aws ecr get-login-password --region ${REGION})
-              kubectl delete secret --ignore-not-found $SECRET_NAME
+              
+              kubectl delete secret --ignore-not-found $SECRET_NAME -n shopmicro
               kubectl create secret docker-registry $SECRET_NAME \
-              --docker-server=https://${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com \
-              --docker-username=AWS \
-              --docker-password="${TOKEN}" \
-              --docker-email="${EMAIL}"
-              kubectl patch serviceaccount default -p '{"imagePullSecrets":[{"name":"'$SECRET_NAME'"}]}'
+                --docker-server=${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com \
+                --docker-username=AWS \
+                --docker-password="${TOKEN}" \
+                --namespace=shopmicro
+              
+              kubectl patch serviceaccount default -n shopmicro -p '{"imagePullSecrets":[{"name":"'$SECRET_NAME'"}]}'
           restartPolicy: OnFailure

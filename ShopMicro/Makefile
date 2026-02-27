@@ -10,8 +10,12 @@ TF_DIR          = infrastructure/terraform
 NAMESPACE       = shopmicro
 MON_NAMESPACE   = monitoring
 
-# Auto-set KUBECONFIG so every kubectl target just works
-export KUBECONFIG := $(CURDIR)/kubeconfig.yaml
+# Auto-set KUBECONFIG to the local folder (handles both root and subfolder calls)
+ifeq ($(wildcard kubeconfig.yaml),)
+    export KUBECONFIG := $(CURDIR)/ShopMicro/kubeconfig.yaml
+else
+    export KUBECONFIG := $(CURDIR)/kubeconfig.yaml
+endif
 
 # Auto-set AWS creds so every terraform target just works
 export AWS_ACCESS_KEY_ID     := AKIAUPMYNOFLCMLVUIW3
@@ -147,6 +151,17 @@ ev-03-fetch-kubeconfig: ## 📸 [3/20] Fetch kubeconfig + Show K3s nodes Ready
 	echo "" && \
 	echo "💡 TIP: If only 1 node is Ready, run: make k3s-join-worker"
 
+k8s-nodes: ## 🚀 Quick check for nodes (no wait)
+	@kubectl get nodes -o wide
+
+k8s-status: ## 🚀 Quick status check for pods and nodes
+	@echo "📊 K8s Node Status:"
+	@kubectl get nodes -o wide
+	@echo ""
+	@echo "📦 Pod Status (shopmicro namespace):"
+	@kubectl get pods -n $(NAMESPACE)
+
+
 # ==============================================================================
 # PHASE 2: ARGOCD + GITOPS
 # ==============================================================================
@@ -168,32 +183,32 @@ ev-04-argocd-install: ## 📸 [4/20] Install ArgoCD + Image Updater
 	@echo ""
 	@echo "📝 Run 'make argocd-pf' in a new terminal to access the UI"
 
-argocd-pf: ## 🔓 Get ArgoCD Password and Port-Forward UI
+argocd-pf: ## 🔐 Get ArgoCD Password (Use NodePort 30080 for UI)
 	@echo "════════════════════════════════════════════════════════════════"
 	@echo "🔐 ArgoCD admin password:"
 	@kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d && echo ""
 	@echo ""
-	@echo "🌐 Port forwarding ArgoCD to https://localhost:8443"
-	@echo "   Hit Ctrl+C to stop."
+	@echo "🌐 Access ArgoCD UI (HTTP):"
+	@MASTER_IP=$$(cd $(TF_DIR) && terraform output -raw k8s_master_ip) && \
+	echo "   👉 http://$$MASTER_IP:30080"
 	@echo "════════════════════════════════════════════════════════════════"
-	kubectl port-forward svc/argocd-server -n argocd 8443:443
 
-ev-05-argocd-app: ## 📸 [5/20] Create ArgoCD App + Sync — Shows ECR images
+ev-05-argocd-app: ## 📸 [5/20] Create ArgoCD App + Sync (Automated CLI)
 	@echo "════════════════════════════════════════════════════════════════"
-	@echo "📸 SCREENSHOT [5/20]: ARGOCD APPLICATION SYNCED"
-	@echo "  → 📝 MANUAL STEPS IN ARGOCD UI:"
-	@echo "  → 1. Click '+ New App'"
-	@echo "  →    Name: shopmicro"
-	@echo "  →    Project: default"
-	@echo "  →    Repo URL: https://github.com/Junnygram/networking.git"
-	@echo "  →    Path: ShopMicro/k8s"
-	@echo "  →    Cluster: https://kubernetes.default.svc"
-	@echo "  →    Namespace: shopmicro"
-	@echo "  → 2. Click 'Create' then 'Sync'"
-	@echo "  → 3. 📸 Screenshot the synced app showing all resources"
-	@echo "  → 4. 📸 Screenshot showing Image Updater pod in argocd ns"
+	@echo "🚀 AUTOMATING ARGOCD APP CREATION"
+	@echo "  → Applying manifest: k8s/argocd-app.yaml"
 	@echo "════════════════════════════════════════════════════════════════"
-	kubectl get pods -n argocd | grep image-updater
+	kubectl apply -f k8s/argocd-app.yaml
+	@echo ""
+	@echo "⏳ Waiting 15s for ArgoCD to detect and start syncing..."
+	@sleep 15
+	@echo "✅ App 'shopmicro' created!"
+	@echo ""
+	@echo "📸 SCREENSHOT [5/20]:"
+	@echo "  1. Go to http://$(shell cd $(TF_DIR) && terraform output -raw k8s_master_ip)/"
+	@echo "  2. Login: admin / $(shell kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d 2>/dev/null)"
+	@echo "  3. Capture the 'shopmicro' app showing all resources green."
+	@echo "════════════════════════════════════════════════════════════════"
 
 # ==============================================================================
 # PHASE 3: APPLICATION VERIFICATION
@@ -394,6 +409,37 @@ ev-20-cost: ## 📸 [20/20] EXTRA: Cost analysis + resource utilization
 	cat costs.md 2>/dev/null || true
 
 # ==============================================================================
+# 🎬 DEMO RECORDING SUITE
+# ==============================================================================
+
+recording-suite: ## 🎥 RUN ALL 3 DEMO PHASES (Rollback + Canary + Chaos) for recording
+	@echo "════════════════════════════════════════════════════════════════"
+	@echo "🎬 STARTING THE PLATFORM RELIABILITY DEMO SUITE"
+	@echo "  → Prepare your screen recorder now!"
+	@echo "════════════════════════════════════════════════════════════════"
+	@echo "🚀 [1/3] PHASE: ZERO-DOWNTIME ROLLBACK"
+	@$(MAKE) ev-16-rollback
+	@echo "⏳ Pausing 5s for you to explain the history..."
+	@sleep 5
+	@echo ""
+	@echo "🚀 [2/3] PHASE: CANARY DEPLOYMENT (v1 & v2)"
+	@$(MAKE) ev-17-canary
+	@echo "📊 Side-by-side view:"
+	@kubectl get pods -n $(NAMESPACE) -l app=backend -L version
+	@echo "⏳ Pausing 10s for you to explain the traffic split..."
+	@sleep 10
+	@echo ""
+	@echo "🚀 [3/3] PHASE: CHAOS ENGINEERING (Self-Healing)"
+	@echo "--- ⏱  START YOUR TIMER ---"
+	@$(MAKE) ev-18-chaos
+	@echo "🔭 Continuous Watch (30s):"
+	@timeout 30 kubectl get pods -n $(NAMESPACE) -w || true
+	@echo ""
+	@echo "✅ DEMO COMPLETE! Restore Redis for a clean state."
+	@kubectl scale deployment redis -n $(NAMESPACE) --replicas=1 2>/dev/null || true
+	@echo "════════════════════════════════════════════════════════════════"
+
+# ==============================================================================
 # UTILITY TARGETS
 # ==============================================================================
 
@@ -424,15 +470,16 @@ cleanup-evicted: ## Cleanup evicted pods in the cluster
 endpoints: ## 🌐 Show all live service URLs and Ports for the demo
 	@MASTER_IP=$$(cd $(TF_DIR) && terraform output -raw k8s_master_ip) && \
 	WORKER_IP=$$(cd $(TF_DIR) && terraform output -raw k8s_worker_ip) && \
+	ARGO_PASS=$$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d 2>/dev/null) && \
 	echo "════════════════════════════════════════════════════════════════" && \
 	echo "🚀 SHOPMICRO DEMO ENDPOINTS" && \
 	echo "════════════════════════════════════════════════════════════════" && \
-	echo "🛒 Frontend App:     http://$$WORKER_IP:30609" && \
+	echo "🛒 Frontend App:     http://$$MASTER_IP/" && \
 	echo "🔌 Backend API:      http://$$MASTER_IP/api" && \
 	echo "📊 Grafana:          http://$$MASTER_IP:32300" && \
 	echo "📈 Prometheus:       http://$$MASTER_IP:32090" && \
 	echo "🔔 AlertManager:     http://$$MASTER_IP:32093 (Port: 32093)" && \
-	echo "🚢 ArgoCD UI:        https://localhost:8443 (run 'make argocd-pf')" && \
+	echo "🚢 ArgoCD UI:        http://$$MASTER_IP:30080/ (Login: admin / $$ARGO_PASS)" && \
 	echo "════════════════════════════════════════════════════════════════"
 
 argocd-status: ## 🚢 Show ArgoCD Sync Status and Apps

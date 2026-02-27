@@ -104,6 +104,99 @@ make alert-simulation
 
 ---
 
+---
+
+## 7. Deployment Evidence (Phase-by-Phase)
+
+This section provides visual proof of the platform's capabilities, from initial provisioning to advanced chaos engineering.
+
+### 🎥 Live Demo Recording
+*   **Reliability & Self-Healing Suite**: Click below to view the video demonstration of Rollback, Canary Traffic Splitting, and Chaos Engineering.
+*   **[Download/View reliability-demo.mov](evidence/Screenshots/reliability-demo.mov)**
+
+### 📸 Phase 1: CI/CD & Foundation
+![GitHub Actions Pipeline Success](evidence/Screenshots/Screenshot%202026-02-27%20at%2008.41.42.png)
+*Pipeline status showing green builds and image pushes to ECR.*
+
+![ECR Registry Status](evidence/Screenshots/Screenshot%202026-02-27%20at%2008.41.51.png)
+*Container images successfully versioned and stored in AWS.*
+
+### 📸 Phase 2: Infrastructure & Cluster
+![Terraform Infrastructure Apply](evidence/Screenshots/Screenshot%202026-02-27%20at%2008.45.30.png)
+*IaC completion for VPC, EC2 Nodes, and Security Groups.*
+
+![K3s Multi-Node Cluster](evidence/Screenshots/Screenshot%202026-02-27%20at%2008.53.10.png)
+*Verification of Master and Worker nodes in a Ready state.*
+
+### 📸 Phase 3: GitOps & Applications
+![ArgoCD Setup](evidence/Screenshots/Screenshot%202026-02-27%20at%2008.56.55.png)
+*Initial ArgoCD configuration and repository connection.*
+
+![ArgoCD Deployment UI](evidence/Screenshots/Screenshot%202026-02-27%20at%2008.57.03.png)
+*ArgoCD managing the lifecycle of ShopMicro services.*
+
+![Application Health Sync](evidence/Screenshots/Screenshot%202026-02-27%20at%2009.31.30.png)
+*All services (Backend, Frontend, ML) Synced and Healthy.*
+
+![Microservice Pods Running](evidence/Screenshots/Screenshot%202026-02-27%20at%2009.37.56.png)
+*Workload distribution across the cluster namespace.*
+
+![Ingress & Load Balancer](evidence/Screenshots/Screenshot%202026-02-27%20at%2009.43.05.png)
+*Public endpoints correctly mapped to internal cluster services.*
+
+### 📸 Phase 4: Scaling & Security
+![HPA Auto-scaling](evidence/Screenshots/Screenshot%202026-02-27%20at%2009.43.20.png)
+*Horizontal Pod Autoscaler configured for backend traffic spikes.*
+
+![Network Policy Enforcement](evidence/Screenshots/Screenshot%202026-02-27%20at%2009.45.16.png)
+*Service-to-service restriction evidence.*
+
+![DevOps Health Script](evidence/Screenshots/Screenshot%202026-02-27%20at%2009.45.37.png)
+*Automated validation of 10+ platform health checks.*
+
+### 📸 Phase 5: Observability
+![Prometheus UI](evidence/Screenshots/Screenshot%202026-02-27%20at%2009.53.20.png)
+*Prometheus server active and scraping cluster metrics.*
+
+![Prometheus Targets](evidence/Screenshots/Screenshot%202026-02-27%20at%2009.57.01.png)
+*Discovery of all service endpoints for metric collection.*
+
+![Grafana Performance Dashboard](evidence/Screenshots/Screenshot%202026-02-27%20at%2009.57.17.png)
+*Real-time visualization of cluster health and application SLOs.*
+
+![AlertManager Status](evidence/Screenshots/Screenshot%202026-02-27%20at%2009.57.27.png)
+*Active alert routing configuration for critical incidents.*
+
+![Metric Extraction](evidence/Screenshots/Screenshot%202026-02-27%20at%2009.58.01.png)
+*Raw metric data point extraction verification.*
+
+![Logs Correlation](evidence/Screenshots/Screenshot%202026-02-27%20at%2009.58.16.png)
+*Structured log aggregation for the distributed system.*
+
+### 📸 Phase 6: Incident & Recovery
+![Slack Alert Fired](evidence/Screenshots/Screenshot%202026-02-27%20at%2010.26.49.png)
+*Real-world notification sent to the DevOps team during a service outage.*
+
+![Rollback History](evidence/Screenshots/Screenshot%202026-02-27%20at%2010.36.15.png)
+*Proof of zero-downtime recovery to a previous stable version.*
+
+![Canary v1/v2 Split](evidence/Screenshots/Screenshot%202026-02-27%20at%2010.51.36.png)
+*Progressive delivery evidence: Two versions running side-by-side.*
+
+### 📸 Phase 7: Extra Credit (Chaos & FinOps)
+![Chaos Engineering Recovery](evidence/Screenshots/Screenshot%202026-02-27%20at%2010.53.51.png)
+*Self-healing test: Pods restored by K8s within seconds of failure.*
+
+![Kyverno Policy Blocking](evidence/Screenshots/Screenshot%202026-02-27%20at%2010.54.12.png)
+*Admission control: Blocking "bad" deployments that lack resource limits.*
+
+![Cost Analysis Output](evidence/Screenshots/Screenshot%202026-02-27%20at%2010.54.39.png)
+*FinOps: Resource utilization vs projected monthly infrastructure spend.*
+
+---
+
+---
+
 ## 10. Known Limitations & Next Improvements
 1.  **Cert-Manager Integration:** Internal Ingress logic runs purely on HTTP. Future work should include automated TLS.
 2.  **Stateful Backups**: Currently uses manual `pg_dump`. Production would use Velero for full cluster backup/restore.

@@ -1,0 +1,2 @@
+NAME                CLASS     HOSTS   ADDRESS                     PORTS   AGE
+shopmicro-ingress   traefik   *       10.0.101.114,10.0.101.201   80      8m40s
