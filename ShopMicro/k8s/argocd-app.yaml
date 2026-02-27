@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: shopmicro
+  namespace: argocd
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: "backend=307946680662.dkr.ecr.us-east-1.amazonaws.com/dev-shopmicro-backend,frontend=307946680662.dkr.ecr.us-east-1.amazonaws.com/dev-shopmicro-frontend,ml-service=307946680662.dkr.ecr.us-east-1.amazonaws.com/dev-shopmicro-ml-service"
+    argocd-image-updater.argoproj.io/backend.update-strategy: latest
+    argocd-image-updater.argoproj.io/frontend.update-strategy: latest
+    argocd-image-updater.argoproj.io/ml-service.update-strategy: latest
+    argocd-image-updater.argoproj.io/auth-secret: ecr-cred
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Junnygram/networking.git
+    targetRevision: capstone-main
+    path: ShopMicro/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: shopmicro
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true

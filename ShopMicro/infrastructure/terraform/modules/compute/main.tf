@@ -81,9 +81,19 @@ resource "aws_instance" "k8s_master" {
   key_name                    = aws_key_pair.k8s_ssh_key.key_name
   iam_instance_profile        = aws_iam_instance_profile.k8s_node_profile.name
 
+  root_block_device {
+    volume_size = 20
+    volume_type = "gp3"
+  }
+
   user_data = <<-EOF
               #!/bin/bash
               set -e
+
+              # Force resize root partition to use full 20GB volume
+              # (Important if AMI defaults to 8GB)
+              sudo growpart /dev/nvme0n1 1 || true
+              sudo resize2fs /dev/nvme0n1p1 || true
 
               # Wait for network to be ready
               sleep 5
@@ -114,19 +124,15 @@ resource "aws_instance" "k8s_master" {
               # Install AWS CLI to get ECR token
               snap install aws-cli --classic
               
-              # Create namespace if it doesn't exist
-              kubectl create namespace shopmicro 2>/dev/null || true
-              
-              # Get ECR Token and Create/Update Secret
-              REGION="us-east-1"
-              ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-              TOKEN=$(aws ecr get-login-password --region $REGION)
-              
-              kubectl delete secret ecr-cred -n shopmicro 2>/dev/null || true
-              kubectl create secret docker-registry ecr-cred \
-                --docker-server=$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com \
-                --docker-username=AWS \
-                --docker-password=$TOKEN -n shopmicro
+               # Create secrets in both namespaces
+              for NS in shopmicro argocd; do
+                kubectl create namespace $NS 2>/dev/null || true
+                kubectl delete secret ecr-cred -n $NS 2>/dev/null || true
+                kubectl create secret docker-registry ecr-cred \
+                  --docker-server=$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com \
+                  --docker-username=AWS \
+                  --docker-password=$TOKEN -n $NS
+              done
                 
               # Patch default service account so all pods use this secret automatically
               kubectl patch serviceaccount default -p '{"imagePullSecrets":[{"name":"ecr-cred"}]}' -n shopmicro
@@ -138,12 +144,16 @@ resource "aws_instance" "k8s_master" {
               REGION="us-east-1"
               ACCOUNT_ID=$(/snap/bin/aws sts get-caller-identity --query Account --output text)
               TOKEN=$(/snap/bin/aws ecr get-login-password --region $REGION)
-              kubectl delete secret ecr-cred -n shopmicro 2>/dev/null || true
-              kubectl create secret docker-registry ecr-cred \
-                --docker-server=$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com \
-                --docker-username=AWS \
-                --docker-password=$TOKEN -n shopmicro
+               for NS in shopmicro argocd; do
+                kubectl create namespace $NS 2>/dev/null || true
+                kubectl delete secret ecr-cred -n $NS 2>/dev/null || true
+                kubectl create secret docker-registry ecr-cred \
+                  --docker-server=$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com \
+                  --docker-username=AWS \
+                  --docker-password=$TOKEN -n $NS
+              done
               kubectl patch serviceaccount default -p '{"imagePullSecrets":[{"name":"ecr-cred"}]}' -n shopmicro
+              kubectl patch serviceaccount default -p '{"imagePullSecrets":[{"name":"ecr-cred"}]}' -n argocd
               CRONSCRIPT
               chmod +x /usr/local/bin/refresh-ecr.sh
               echo "0 */6 * * * root /usr/local/bin/refresh-ecr.sh" > /etc/cron.d/ecr-refresh
@@ -164,9 +174,17 @@ resource "aws_instance" "k8s_worker" {
   key_name                    = aws_key_pair.k8s_ssh_key.key_name
   iam_instance_profile        = aws_iam_instance_profile.k8s_node_profile.name
 
+  root_block_device {
+    volume_size = 20
+    volume_type = "gp3"
+  }
+
   # Wait for master, retrieve token, and join
   user_data = <<-EOF
               #!/bin/bash
+              # Force resize root partition
+              sudo growpart /dev/nvme0n1 1 || true
+              sudo resize2fs /dev/nvme0n1p1 || true
               sleep 60
               # In a perfect world we pass the token securely, but for this quick demo loop we assume k3s master IP
               MASTER_IP=${aws_instance.k8s_master.private_ip}

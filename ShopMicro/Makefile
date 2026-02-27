@@ -120,7 +120,9 @@ ev-03-fetch-kubeconfig: ## 📸 [3/20] Fetch kubeconfig + Show K3s nodes Ready
 	sed -i '' "s/127.0.0.1/$$MASTER_IP/g" kubeconfig.yaml && \
 	echo "" && \
 	echo "✅ Kubeconfig saved. Showing nodes:" && \
-	kubectl get nodes -o wide
+	kubectl get nodes -o wide && \
+	echo "" && \
+	echo "💡 TIP: If only 1 node is Ready, run: make k3s-join-worker"
 
 # ==============================================================================
 # PHASE 2: ARGOCD + GITOPS
@@ -379,6 +381,22 @@ ssh-master: ## SSH into K3s master
 ssh-worker: ## SSH into K3s worker
 	@WORKER_IP=$$(cd $(TF_DIR) && terraform output -raw k8s_worker_ip) && \
 	ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no ubuntu@$$WORKER_IP
+
+k3s-join-worker: ## Join the worker node to the master cluster
+	@echo "⏳ Extracting join token from master..."
+	@MASTER_IP=$$(cd $(TF_DIR) && terraform output -raw k8s_master_ip) && \
+	WORKER_IP=$$(cd $(TF_DIR) && terraform output -raw k8s_worker_ip) && \
+	TOKEN=$$(ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no ubuntu@$$MASTER_IP "sudo cat /var/lib/rancher/k3s/server/node-token") && \
+	echo "🚀 Joining worker ($$WORKER_IP) to master ($$MASTER_IP)..." && \
+	ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no ubuntu@$$WORKER_IP \
+	  "curl -sfL https://get.k3s.io | K3S_URL=https://$$MASTER_IP:6443 K3S_TOKEN=$$TOKEN sh -" && \
+	echo "✅ Worker joined. Check status with: kubectl get nodes"
+
+cleanup-evicted: ## Cleanup evicted pods in the cluster
+	@echo "🧹 Removing evicted pods..."
+	@export KUBECONFIG=./kubeconfig.yaml && \
+	kubectl delete pods --field-selector status.phase=Failed -A && \
+	kubectl delete pods --field-selector status.phase=Succeeded -A
 
 tf-destroy: ## 🚨 Destroy ALL infra (VPC, EC2, ECR, OIDC — everything)
 	@echo "🚨 DESTROYING ALL AWS INFRASTRUCTURE..."
