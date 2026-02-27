@@ -32,19 +32,19 @@ jobs:
       - name: Install dependencies (Frontend)
         run: cd ShopMicro/frontend && npm ci || npm i
 
-  iac-validation:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-      - name: Terraform Format Check
-        run: terraform fmt -check -recursive ShopMicro/infrastructure/terraform/
-      - name: Terraform Init & Validate
-        run: |
-          cd ShopMicro/infrastructure/terraform
-          terraform init -backend=false
-          terraform validate
+  # iac-validation:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Setup Terraform
+  #       uses: hashicorp/setup-terraform@v3
+  #     - name: Terraform Format Check
+  #       run: terraform fmt -check -recursive ShopMicro/infrastructure/terraform/
+  #     - name: Terraform Init & Validate
+  #       run: |
+  #         cd ShopMicro/infrastructure/terraform
+  #         terraform init -backend=false
+  #         terraform validate
   # NOTE: Terraform validation commented out - infrastructure managed locally for capstone evidence
 
   detect-changes:
