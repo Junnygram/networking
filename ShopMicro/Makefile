@@ -20,7 +20,7 @@ export AWS_DEFAULT_REGION    := us-east-1
 
 .PHONY: help
 
-help: ## Show all evidence targets
+help: ## Show this help message
 	@echo ""
 	@echo "╔══════════════════════════════════════════════════════════════╗"
 	@echo "║      ShopMicro Capstone — Evidence Pipeline                 ║"
@@ -31,12 +31,35 @@ help: ## Show all evidence targets
 	@echo "║  PHASE 2: ARGOCD + GITOPS ............... ev-04, ev-05      ║"
 	@echo "║  PHASE 3: APPLICATIONS .................. ev-06 to ev-10    ║"
 	@echo "║  PHASE 4: OBSERVABILITY ................. ev-11 to ev-14    ║"
-	@echo "║  PHASE 5: INCIDENT & RECOVERY ........... ev-15, ev-16      ║"
-	@echo "║  PHASE 6: EXTRA CREDIT .................. ev-17 to ev-20    ║"
-	@echo "║  UTILITIES .............................. ssh-master, etc   ║"
+	@echo "║  UTILITIES .............................. endpoints, etc    ║"
 	@echo "╚══════════════════════════════════════════════════════════════╝"
 	@echo ""
-	@grep -E '^ev-[0-9]|^ssh-|^tf-' $(MAKEFILE_LIST) | grep '##' | awk 'BEGIN {FS = \":.*?## \"}; {printf "  \033[36m%-30s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^ev-[0-9]|^ssh-|^tf-|^endpoint|^cleanup' $(MAKEFILE_LIST) | grep '##' | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-30s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "💡 Run 'make help-demo' for the step-by-step flow guide."
+
+help-demo: ## 🎬 Show guide for the Demo Flow (from Phase 1 to 5)
+	@echo "════════════════════════════════════════════════════════════════"
+	@echo "🎬 SHOPMICRO DEMO FLOW GUIDE"
+	@echo "════════════════════════════════════════════════════════════════"
+	@echo "PHASE 1: Infrastructure (Terraform + ECR)"
+	@echo "  1. make ev-02-tf-apply      - Build the foundation"
+	@echo "  2. [Manual] Update GitHub Secret: GH_ACTIONS_ROLE_ARN"
+	@echo "  3. make push-trigger        - Trigger CI/CD Pipeline"
+	@echo "  4. make ev-03-fetch-kubeconfig - Get access and join worker"
+	@echo ""
+	@echo "PHASE 2: GitOps (ArgoCD)"
+	@echo "  5. make ev-04-argocd-install - Setup ArgoCD"
+	@echo "  6. make ev-05-argocd-app     - Deploy the app via Git"
+	@echo ""
+	@echo "PHASE 3: Health & DevOps"
+	@echo "  7. make ev-06-pods           - Verify everything is Running"
+	@echo "  8. make ev-10-devops-script  - Run automation script"
+	@echo ""
+	@echo "PHASE 4: Monitoring (Prometheus/Grafana)"
+	@echo "  9. make ev-11-monitoring     - Check the dashboards"
+	@echo "  10. make endpoints           - Get your live links"
+	@echo "════════════════════════════════════════════════════════════════"
 
 # ==============================================================================
 # PHASE 0: CI PIPELINE (GitHub Actions must have run before this)
@@ -397,6 +420,27 @@ cleanup-evicted: ## Cleanup evicted pods in the cluster
 	@export KUBECONFIG=./kubeconfig.yaml && \
 	kubectl delete pods --field-selector status.phase=Failed -A && \
 	kubectl delete pods --field-selector status.phase=Succeeded -A
+
+endpoints: ## 🌐 Show all live service URLs and Ports for the demo
+	@MASTER_IP=$$(cd $(TF_DIR) && terraform output -raw k8s_master_ip) && \
+	WORKER_IP=$$(cd $(TF_DIR) && terraform output -raw k8s_worker_ip) && \
+	echo "════════════════════════════════════════════════════════════════" && \
+	echo "🚀 SHOPMICRO DEMO ENDPOINTS" && \
+	echo "════════════════════════════════════════════════════════════════" && \
+	echo "🛒 Frontend App:     http://$$WORKER_IP:30609" && \
+	echo "🔌 Backend API:      http://$$MASTER_IP/api" && \
+	echo "📊 Grafana:          http://$$MASTER_IP:32300" && \
+	echo "📈 Prometheus:       http://$$MASTER_IP:32090" && \
+	echo "🔔 AlertManager:     http://$$MASTER_IP:32093 (Port: 32093)" && \
+	echo "🚢 ArgoCD UI:        https://localhost:8443 (run 'make argocd-pf')" && \
+	echo "════════════════════════════════════════════════════════════════"
+
+argocd-status: ## 🚢 Show ArgoCD Sync Status and Apps
+	@echo "📊 ArgoCD Application Status:"
+	@kubectl get applications -n argocd
+	@echo ""
+	@echo "🖼️  Image Updater Status:"
+	@kubectl logs deployment/argocd-image-updater -n argocd | tail -n 5
 
 tf-destroy: ## 🚨 Destroy ALL infra (VPC, EC2, ECR, OIDC — everything)
 	@echo "🚨 DESTROYING ALL AWS INFRASTRUCTURE..."
